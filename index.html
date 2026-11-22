@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Audixify — Global, Asian & Indonesian Music Streaming</title>
+    <meta
+      name="description"
+      content="Stream global, Asian, and Indonesian music with live-scraped catalogs, regional charts, synced lyrics, and full-length audio playback. Built by sky."
+    />
+    <meta property="og:title" content="Audixify — Global, Asian & Indonesian Music Streaming" />
+    <meta
+      property="og:description"
+      content="Stream global, Asian, and Indonesian music with live-scraped catalogs, regional charts, synced lyrics, and full-length audio playback. Built by sky."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://audixify.skydev.my.id" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('audixify_theme');
+          if (saved === 'light') {
+            document.documentElement.classList.remove('dark');
+          } else {
+            document.documentElement.classList.add('dark');
+          }
+          var perf = localStorage.getItem('audixify_perf_mode');
+          if (perf === 'lite') {
+            document.documentElement.setAttribute('data-perf', 'lite');
+          } else if (perf !== 'full') {
+            var mem = navigator.deviceMemory;
+            var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if ((typeof mem === 'number' && mem <= 3) || reduced) {
+              document.documentElement.setAttribute('data-perf', 'lite');
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-[#F7F7F5] text-zinc-900 dark:bg-[#0B0C0E] dark:text-zinc-100 antialiased selection:bg-[#FF4D2E]/20 selection:text-[#FF4D2E]">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

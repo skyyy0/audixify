@@ -1,0 +1,6 @@
+{
+  "name": "Audixify",
+  "description": "Stream global, Asian, and Indonesian music with live-scraped catalogs, regional charts, synced lyrics, and full-length audio playback. Built by sky.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

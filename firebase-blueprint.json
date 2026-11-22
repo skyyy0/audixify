@@ -1,0 +1,258 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Audixify user profile, customizable handle, avatar, and persisted playback settings.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Authentication UID matching the document ID."
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 24,
+          "pattern": "^[a-z0-9_.]{3,24}$",
+          "description": "Unique-style handle shown in Audixify profile and support chat."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "User display name."
+        },
+        "bio": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240,
+          "description": "Short user bio or music mood."
+        },
+        "avatarDataUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120000,
+          "description": "Google avatar URL or compressed 256px JPEG data URL."
+        },
+        "isDeveloper": {
+          "type": "boolean",
+          "description": "True only for verified developer email sekay77771@gmail.com."
+        },
+        "perfMode": {
+          "type": "string",
+          "enum": ["auto", "lite", "full"],
+          "description": "GPU and Liquid Glass performance tier."
+        },
+        "audioQuality": {
+          "type": "string",
+          "enum": ["auto", "high", "saver"],
+          "description": "Preferred audio playback quality tier."
+        },
+        "lyricsSize": {
+          "type": "string",
+          "enum": ["compact", "standard", "large"],
+          "description": "Now Playing lyrics font scale."
+        },
+        "defaultRegion": {
+          "type": "string",
+          "enum": ["all", "id", "asia", "global"],
+          "description": "Default catalog region filter."
+        },
+        "autoplay": {
+          "type": "boolean",
+          "description": "Continue playing queue automatically."
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["dark", "light"],
+          "description": "Studio Light or Obsidian Dark theme preference."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of account creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last profile update."
+        }
+      },
+      "required": ["uid", "username", "displayName", "isDeveloper", "createdAt", "updatedAt"]
+    },
+    "UserLibraryState": {
+      "title": "UserLibraryState",
+      "description": "Cloud-synced liked songs, followed artists, and custom playlists per user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "likedTracks": {
+          "type": "array",
+          "description": "Bounded array of liked tracks (max 100)."
+        },
+        "followedArtists": {
+          "type": "array",
+          "description": "Bounded array of followed artists (max 100)."
+        },
+        "playlists": {
+          "type": "array",
+          "description": "Bounded array of user playlists (max 40)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "likedTracks", "followedArtists", "playlists", "updatedAt"]
+    },
+    "SupportThread": {
+      "title": "SupportThread",
+      "description": "User bug report & support chat thread with Audixify developer sky.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "senderUsername": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 24
+        },
+        "senderAvatar": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120000
+        },
+        "category": {
+          "type": "string",
+          "enum": ["bug", "stream", "feature", "general"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "resolved"]
+        },
+        "lastMessagePreview": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "unreadByAdmin": {
+          "type": "boolean"
+        },
+        "unreadByUser": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerUid",
+        "senderName",
+        "category",
+        "status",
+        "unreadByAdmin",
+        "unreadByUser",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SupportMessage": {
+      "title": "SupportMessage",
+      "description": "Message inside a support chat thread, optionally carrying a compressed bug-evidence photo.",
+      "type": "object",
+      "properties": {
+        "threadOwnerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "senderUsername": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 24
+        },
+        "senderAvatar": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120000
+        },
+        "senderRole": {
+          "type": "string",
+          "enum": ["user", "developer"]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1500
+        },
+        "imageDataUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 420000
+        },
+        "deviceInfo": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 220
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["threadOwnerUid", "senderUid", "senderName", "senderRole", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Authenticated user profile and app preferences."
+    },
+    "/userLibraries/{userId}": {
+      "schema": { "$ref": "#/entities/UserLibraryState" },
+      "description": "User synced likes, followed artists, and playlists."
+    },
+    "/supportThreads/{threadId}": {
+      "schema": { "$ref": "#/entities/SupportThread" },
+      "description": "Support & bug report conversations between users and developer sky."
+    },
+    "/supportThreads/{threadId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/SupportMessage" },
+      "description": "Individual messages and photo bug evidence inside a support thread."
+    }
+  }
+}
