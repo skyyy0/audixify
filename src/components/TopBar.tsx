@@ -59,39 +59,39 @@ export function TopBar({
   };
 
   return (
-    <header className="px-4 pt-3 pb-2 md:px-6 md:pt-3 md:pb-2 shrink-0 z-20">
-      <div className="h-12 md:h-14 px-3 md:px-4 rounded-[22px] ios-glass flex items-center justify-between gap-3 md:gap-4">
+    <header className="px-2.5 pt-2 pb-1.5 sm:px-4 sm:pt-3 sm:pb-2 md:px-6 shrink-0 z-20">
+      <div className="h-12 md:h-14 px-2.5 sm:px-3 md:px-4 rounded-[20px] md:rounded-[22px] ios-glass flex items-center justify-between gap-2 sm:gap-3 md:gap-4 min-w-0">
         {/* Mobile Brand */}
         <button
           type="button"
           onClick={onHomeClick}
-          className="flex md:hidden items-center gap-2 shrink-0 active:scale-95 transition-transform"
+          className="flex md:hidden items-center gap-1.5 sm:gap-2 shrink-0 active:scale-95 transition-transform"
           aria-label="Audixify Home"
         >
-          <BrandMark className="w-6 h-6" />
-          <span className="font-display text-base font-bold text-zinc-900 dark:text-zinc-100">
+          <BrandMark className="w-6 h-6 shrink-0" />
+          <span className="hidden min-[360px]:inline font-display text-sm sm:text-base font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
             Audixify
           </span>
         </button>
 
         {/* Search Capsule */}
-        <form onSubmit={handleSubmit} className="flex-1 max-w-md relative">
-          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <form onSubmit={handleSubmit} className="flex-1 min-w-0 max-w-md relative">
+          <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             ref={inputRef}
             type="search"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search Dewa 19, Tulus, Slank, Justin Bieber..."
+            placeholder="Search Dewa 19, Tulus, Slank..."
             aria-label="Search music catalog"
-            className="w-full h-9 pl-9 pr-8 rounded-full text-xs md:text-sm bg-black/[0.045] dark:bg-white/[0.065] border border-black/[0.04] dark:border-white/[0.07] focus:border-[#FF4D2E]/60 focus:bg-white/90 dark:focus:bg-white/[0.11] text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:outline-none transition-all duration-200"
+            className="w-full min-w-0 h-9 pl-8 sm:pl-9 pr-7 sm:pr-8 rounded-full text-base md:text-sm bg-black/[0.045] dark:bg-white/[0.065] border border-black/[0.04] dark:border-white/[0.07] focus:border-[#FF4D2E]/60 focus:bg-white/90 dark:focus:bg-white/[0.11] text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 focus:outline-none transition-all duration-200"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchChange('')}
               aria-label="Clear search"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -99,7 +99,7 @@ export function TopBar({
         </form>
 
         {/* Region Segmented Capsule + Theme Switch */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           <LayoutGroup id="topbar-region-group">
             <div
               className="hidden lg:flex items-center gap-0.5 p-1 rounded-full ios-glass-pill"

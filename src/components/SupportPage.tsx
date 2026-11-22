@@ -14,9 +14,9 @@ export function SupportPage({ onBackToApp }: SupportPageProps) {
   const { user, profile, isDeveloper } = useAuth();
 
   return (
-    <div className="min-h-screen w-full flex flex-col ios-ambient-canvas text-zinc-900 dark:text-zinc-100">
+    <div className="h-full w-full flex flex-col overflow-hidden ios-ambient-canvas text-zinc-900 dark:text-zinc-100">
       {/* Dedicated Fullscreen Support Header */}
-      <header className="px-4 pt-3 pb-2 md:px-8 shrink-0 z-20">
+      <header className="px-3 pt-2.5 pb-1.5 sm:px-4 md:px-8 shrink-0 z-20">
         <div className="max-w-6xl mx-auto h-14 px-4 rounded-[22px] ios-glass flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -60,7 +60,7 @@ export function SupportPage({ onBackToApp }: SupportPageProps) {
       </header>
 
       {/* Fullscreen Workspace */}
-      <main className="flex-1 px-4 py-3 md:px-8 md:py-4">
+      <main className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-3 py-2.5 sm:px-4 md:px-8 md:py-4">
         <div className="max-w-6xl mx-auto">
           <SupportChatSection fullScreen />
         </div>

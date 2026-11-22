@@ -39,10 +39,10 @@ export function Sidebar({ activeView, activePlaylistId, onNavigate }: SidebarPro
   ];
 
   return (
-    <aside className="hidden md:flex flex-col w-64 shrink-0 h-full p-3 pr-0 select-none">
+    <aside className="hidden md:flex flex-col md:w-56 lg:w-64 shrink-0 h-full p-3 pr-0 select-none">
       <div className="flex flex-col flex-1 min-h-0 rounded-[26px] ios-glass overflow-hidden">
         {/* Brand Lockup */}
-        <div className="px-5 h-16 flex items-center gap-3 border-b border-black/[0.06] dark:border-white/[0.07]">
+        <div className="px-5 h-16 shrink-0 flex items-center gap-3 border-b border-black/[0.06] dark:border-white/[0.07]">
           <BrandMark className="w-7 h-7 shrink-0" />
           <span className="font-display text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
             Audixify
@@ -51,10 +51,11 @@ export function Sidebar({ activeView, activePlaylistId, onNavigate }: SidebarPro
 
         {/* Primary Nav */}
         <LayoutGroup id="sidebar-nav-group">
-          <nav className="px-3 py-3.5 space-y-1" aria-label="Primary navigation">
+          <nav className="px-3 py-3 space-y-1 shrink-0" aria-label="Primary navigation">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const active = activeView === item.id;
+              const active =
+                activeView === item.id || (item.id === 'library' && activeView === 'playlist');
               return (
                 <motion.button
                   key={item.id}
@@ -97,7 +98,7 @@ export function Sidebar({ activeView, activePlaylistId, onNavigate }: SidebarPro
         </LayoutGroup>
 
         {/* Playlists & Liked */}
-        <div className="px-4 pt-3 pb-2 flex items-center justify-between border-t border-black/[0.06] dark:border-white/[0.07]">
+        <div className="px-4 pt-3 pb-2 shrink-0 flex items-center justify-between border-t border-black/[0.06] dark:border-white/[0.07]">
           <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Playlists</span>
           <motion.button
             type="button"

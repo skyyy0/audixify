@@ -116,7 +116,7 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
   ];
 
   return (
-    <div className="shrink-0 z-30 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:px-3 md:pb-3 space-y-1.5">
+    <div className="shrink-0 z-30 px-2 pb-[max(0.375rem,env(safe-area-inset-bottom))] sm:px-3 md:pb-3 space-y-1.5">
       <AnimatePresence>
         {currentTrack ? (
           <motion.div
@@ -125,12 +125,12 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 20, opacity: 0 }}
             transition={IOS_SPRING_SNAPPY}
-            className="relative rounded-[24px] md:rounded-[26px] ios-glass px-3 md:px-5 py-2 md:h-[78px] flex items-center justify-between gap-3 md:gap-6"
+            className="relative rounded-[22px] md:rounded-[26px] ios-glass px-2.5 sm:px-3 lg:px-5 py-1.5 md:py-2 md:h-[76px] flex items-center justify-between gap-2 sm:gap-3 lg:gap-6 min-w-0"
           >
             <MobileMiniProgressBar fallbackDuration={currentTrack.durationSec || 0} />
 
             {/* Left: Track Info */}
-            <div className="flex items-center gap-3 min-w-0 flex-1 md:flex-initial md:w-[28%]">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 md:flex-initial md:w-[28%]">
               <button
                 type="button"
                 onClick={() => setNowPlayingOpen(true)}
@@ -254,7 +254,7 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
             </div>
 
             {/* Right: Watch MV, Lyrics & Volume */}
-            <div className="flex items-center gap-1 md:w-[26%] justify-end">
+            <div className="flex items-center gap-1 md:w-auto lg:w-[26%] shrink-0 justify-end">
               {/* Mobile quick MV + Play + Next (>=40px touch targets) */}
               <div className="flex md:hidden items-center gap-0.5">
                 <button
@@ -339,7 +339,7 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
                   value={muted ? 0 : volume}
                   onChange={(e) => setVolume(Number(e.target.value))}
                   aria-label="Volume"
-                  className="w-20 ios-slider"
+                  className="hidden lg:block w-20 ios-slider"
                   style={{
                     background: `linear-gradient(to right, #FF4D2E ${volPct}%, rgba(161,161,170,0.28) ${volPct}%)`,
                   }}
@@ -358,18 +358,19 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
       {/* Mobile Floating Liquid Glass Bottom Tab Capsule */}
       <LayoutGroup id="mobile-tab-group">
         <nav
-          className="md:hidden grid grid-cols-5 h-12 rounded-[22px] ios-glass p-1"
+          className="md:hidden grid grid-cols-5 h-[52px] rounded-[20px] ios-glass p-1 gap-0.5"
           aria-label="Mobile navigation"
         >
           {mobileTabs.map((tab) => {
             const Icon = tab.icon;
-            const active = activeView === tab.id;
+            const active =
+              activeView === tab.id || (tab.id === 'library' && activeView === 'playlist');
             return (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => onNavigate(tab.id)}
-                className={`relative flex flex-col items-center justify-center gap-0.5 rounded-2xl text-[10px] font-medium transition-colors ${
+                className={`relative min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-2xl px-0.5 text-[10px] font-medium transition-colors ${
                   active ? 'text-[#FF4D2E]' : 'text-zinc-500 dark:text-zinc-400'
                 }`}
               >
@@ -380,8 +381,8 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
                     className="absolute inset-0 rounded-2xl bg-white/80 dark:bg-white/[0.12] shadow-xs"
                   />
                 )}
-                <Icon className="relative z-10 w-4 h-4" />
-                <span className="relative z-10">{tab.label}</span>
+                <Icon className="relative z-10 w-4 h-4 shrink-0" />
+                <span className="relative z-10 truncate max-w-full leading-none">{tab.label}</span>
               </button>
             );
           })}

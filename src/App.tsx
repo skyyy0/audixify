@@ -193,8 +193,47 @@ function AudixifyShell() {
         ? `playlist-${activePlaylistId || ''}`
         : activeView;
 
+  useEffect(() => {
+    const preventMultiTouch = (e: TouchEvent) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    };
+    const preventGesture = (e: Event) => {
+      e.preventDefault();
+    };
+    const preventWheelZoom = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+      }
+    };
+    const preventKeyZoom = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('touchstart', preventMultiTouch, { passive: false });
+    document.addEventListener('touchmove', preventMultiTouch, { passive: false });
+    document.addEventListener('gesturestart', preventGesture, { passive: false });
+    document.addEventListener('gesturechange', preventGesture, { passive: false });
+    document.addEventListener('gestureend', preventGesture, { passive: false });
+    window.addEventListener('wheel', preventWheelZoom, { passive: false });
+    window.addEventListener('keydown', preventKeyZoom);
+
+    return () => {
+      document.removeEventListener('touchstart', preventMultiTouch);
+      document.removeEventListener('touchmove', preventMultiTouch);
+      document.removeEventListener('gesturestart', preventGesture);
+      document.removeEventListener('gesturechange', preventGesture);
+      document.removeEventListener('gestureend', preventGesture);
+      window.removeEventListener('wheel', preventWheelZoom);
+      window.removeEventListener('keydown', preventKeyZoom);
+    };
+  }, []);
+
   return (
-    <div className="h-screen w-full flex flex-col overflow-hidden ios-ambient-canvas text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
+    <div className="h-screen supports-[height:100dvh]:h-dvh w-full flex flex-col overflow-hidden ios-ambient-canvas text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
       {/* iOS Dynamic Island Style Floating Feedback Toast */}
       <AnimatePresence>
         {toastMessage && (
@@ -233,7 +272,7 @@ function AudixifyShell() {
           onNavigate={handleNavigate}
         />
 
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           <TopBar
             searchQuery={searchQuery}
             onSearchChange={handleSearchChange}
@@ -244,7 +283,7 @@ function AudixifyShell() {
             onProfileClick={() => handleNavigate('profile')}
           />
 
-          <main className="flex-1 overflow-y-auto px-4 py-3 md:px-6 md:py-4 scroll-smooth">
+          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 py-2.5 sm:px-4 sm:py-3 md:px-6 md:py-4 scroll-smooth">
             <div className="max-w-7xl mx-auto">
               <motion.div
                 key={viewKey}
