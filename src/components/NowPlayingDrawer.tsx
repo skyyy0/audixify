@@ -13,10 +13,14 @@ import {
   Play,
   Repeat,
   Repeat1,
+  RotateCcw,
+  RotateCw,
   Share2,
   Shuffle,
   SkipBack,
   SkipForward,
+  Sliders,
+  Sparkles,
   Trash2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +31,7 @@ import { formatDuration } from '../utils/format';
 import { IOS_SPRING, IOS_SPRING_SHEET, IOS_SPRING_SNAPPY } from '../utils/motion';
 import { Artwork } from './Artwork';
 import { NativeMvPlayer, type NativeMvPlayerHandle } from './NativeMvPlayer';
+import { ShareLyricsModal } from './ShareLyricsModal';
 
 interface NowPlayingDrawerProps {
   onArtistClick: (name: string) => void;
@@ -60,10 +65,16 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
     cycleRepeat,
     playFromQueueIndex,
     removeFromQueue,
+    shuffleQueue,
+    clearQueue,
     addToQueue,
     isLiked,
     toggleLike,
     showToast,
+    eqSettings,
+    setEqModalOpen,
+    showRemainingTime,
+    toggleRemainingTime,
   } = usePlayer();
   const { currentTime, duration } = usePlayerProgress();
   const { preferences } = useAuth();
@@ -86,6 +97,8 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
   const [videoTime, setVideoTime] = useState(0);
   const [manualScrollPaused, setManualScrollPaused] = useState(false);
   const [sleepMenuOpen, setSleepMenuOpen] = useState(false);
+  const [shareLyricsOpen, setShareLyricsOpen] = useState(false);
+  const [shareInitialLine, setShareInitialLine] = useState(0);
 
   const activeLineRef = useRef<HTMLButtonElement | null>(null);
   const lyricsBoxRef = useRef<HTMLDivElement | null>(null);
@@ -178,6 +191,20 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
     return idx;
   }, [lyrics, activeTime]);
 
+  const shareableLyricLines = useMemo(() => {
+    if (!lyrics?.found) return [];
+    if (lyrics.synced && lyrics.lines.length > 0) {
+      return lyrics.lines.map((l) => l.text).filter(Boolean);
+    }
+    if (lyrics.plainText) {
+      return lyrics.plainText
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+    }
+    return [];
+  }, [lyrics]);
+
   const scrollToActiveLine = () => {
     const container = lyricsBoxRef.current;
     const activeEl = activeLineRef.current;
@@ -194,6 +221,7 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
 
   const liked = currentTrack ? isLiked(currentTrack.id) : false;
   const effectiveDuration = duration > 0 ? duration : currentTrack?.durationSec || 0;
+  const remainingSec = Math.max(0, effectiveDuration - currentTime);
   const progressPct =
     effectiveDuration > 0 ? Math.min(100, (currentTime / effectiveDuration) * 100) : 0;
   const hasSleepTimer = Boolean(sleepEndsAt || sleepAfterTrack);
@@ -443,6 +471,24 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
+                        onClick={() => setEqModalOpen(true)}
+                        title="5-Band Equalizer"
+                        aria-label="Open 5-Band Equalizer"
+                        className={`relative p-2 rounded-full ios-glass-pill active:scale-90 transition-all ${
+                          eqSettings.enabled
+                            ? 'text-[#FF4D2E]'
+                            : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Sliders className="w-4 h-4" />
+                        {eqSettings.playbackRate !== 1 && (
+                          <span className="absolute -top-1 -right-1 px-1 rounded-full bg-[#FF4D2E] text-white text-[9px] font-mono font-bold">
+                            {eqSettings.playbackRate}x
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => toggleLike(currentTrack)}
                         aria-label="Toggle favorite"
                         className={`p-2 rounded-full ios-glass-pill active:scale-90 transition-all ${
@@ -488,55 +534,86 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                         />
                         <div className="flex justify-between text-[11px] font-mono tabular-nums text-zinc-500 dark:text-zinc-400">
                           <span>{formatDuration(currentTime)}</span>
-                          <span>{formatDuration(effectiveDuration)}</span>
+                          <button
+                            type="button"
+                            onClick={toggleRemainingTime}
+                            title="Tap to toggle remaining / total time"
+                            className="hover:text-zinc-900 dark:hover:text-white transition-colors"
+                          >
+                            {showRemainingTime
+                              ? `-${formatDuration(remainingSec)}`
+                              : formatDuration(effectiveDuration)}
+                          </button>
                         </div>
                       </div>
 
-                      {/* Transport with Shuffle, Repeat & Sleep Timer */}
-                      <div className="flex items-center justify-between gap-2 pt-1">
+                      {/* Transport with Shuffle, ±10s Skip, Repeat & Sleep Timer */}
+                      <div className="flex items-center justify-between gap-1.5 pt-1">
                         <button
                           type="button"
                           onClick={toggleShuffle}
                           aria-label="Toggle shuffle"
-                          className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-all ${
+                          className={`w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-all ${
                             shuffle ? 'text-[#FF4D2E]' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
                           }`}
                         >
                           <Shuffle className="w-4 h-4" />
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={prevTrack}
-                          aria-label="Previous track"
-                          className="w-12 h-12 rounded-full ios-glass-pill flex items-center justify-center text-zinc-700 dark:text-zinc-200 hover:bg-white/70 dark:hover:bg-white/[0.12] active:scale-90 transition-all"
-                        >
-                          <SkipBack className="w-5 h-5 fill-current" />
-                        </button>
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          <button
+                            type="button"
+                            onClick={prevTrack}
+                            aria-label="Previous track"
+                            className="w-11 h-11 rounded-full ios-glass-pill flex items-center justify-center text-zinc-700 dark:text-zinc-200 hover:bg-white/70 dark:hover:bg-white/[0.12] active:scale-90 transition-all"
+                          >
+                            <SkipBack className="w-4 h-4 fill-current" />
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={togglePlayPause}
-                          aria-label={isPlaying ? 'Pause' : 'Play'}
-                          className="w-16 h-16 rounded-full bg-[#FF4D2E] text-white flex items-center justify-center shadow-[0_10px_28px_rgba(255,77,46,0.42)] hover:bg-[#E63E21] hover:scale-105 active:scale-90 transition-transform"
-                        >
-                          {isBuffering ? (
-                            <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          ) : isPlaying ? (
-                            <Pause className="w-6 h-6 fill-white" />
-                          ) : (
-                            <Play className="w-6 h-6 fill-white ml-0.5" />
-                          )}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => seekTo(Math.max(0, currentTime - 10))}
+                            aria-label="Rewind 10 seconds"
+                            title="-10s"
+                            className="relative w-9 h-9 rounded-full flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white active:scale-90 transition-all"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={nextTrack}
-                          aria-label="Next track"
-                          className="w-12 h-12 rounded-full ios-glass-pill flex items-center justify-center text-zinc-700 dark:text-zinc-200 hover:bg-white/70 dark:hover:bg-white/[0.12] active:scale-90 transition-all"
-                        >
-                          <SkipForward className="w-5 h-5 fill-current" />
-                        </button>
+                          <button
+                            type="button"
+                            onClick={togglePlayPause}
+                            aria-label={isPlaying ? 'Pause' : 'Play'}
+                            className="w-16 h-16 rounded-full bg-[#FF4D2E] text-white flex items-center justify-center shadow-[0_10px_28px_rgba(255,77,46,0.42)] hover:bg-[#E63E21] hover:scale-105 active:scale-90 transition-transform"
+                          >
+                            {isBuffering ? (
+                              <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : isPlaying ? (
+                              <Pause className="w-6 h-6 fill-white" />
+                            ) : (
+                              <Play className="w-6 h-6 fill-white ml-0.5" />
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => seekTo(currentTime + 10)}
+                            aria-label="Forward 10 seconds"
+                            title="+10s"
+                            className="relative w-9 h-9 rounded-full flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white active:scale-90 transition-all"
+                          >
+                            <RotateCw className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={nextTrack}
+                            aria-label="Next track"
+                            className="w-11 h-11 rounded-full ios-glass-pill flex items-center justify-center text-zinc-700 dark:text-zinc-200 hover:bg-white/70 dark:hover:bg-white/[0.12] active:scale-90 transition-all"
+                          >
+                            <SkipForward className="w-4 h-4 fill-current" />
+                          </button>
+                        </div>
 
                         <div className="flex items-center gap-1">
                           <button
@@ -629,8 +706,8 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                     </div>
                   ) : lyrics.synced ? (
                     <>
-                      {manualScrollPaused && (
-                        <div className="sticky top-0 z-20 flex justify-end pb-2 pointer-events-none">
+                      <div className="sticky top-0 z-20 flex items-center justify-end gap-2 pb-2 pointer-events-none">
+                        {manualScrollPaused && (
                           <button
                             type="button"
                             onClick={() => {
@@ -641,8 +718,21 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                           >
                             Resume Sync
                           </button>
-                        </div>
-                      )}
+                        )}
+                        {shareableLyricLines.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShareInitialLine(Math.max(0, activeLineIdx));
+                              setShareLyricsOpen(true);
+                            }}
+                            className="pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full ios-glass-pill text-xs font-semibold text-zinc-800 dark:text-zinc-100 hover:text-[#FF4D2E] shadow-sm active:scale-95 transition-all"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-[#FF4D2E]" />
+                            <span>Share Lyrics</span>
+                          </button>
+                        )}
+                      </div>
                       <div className="space-y-3.5 py-2">
                         {lyrics.lines.map((line, i) => {
                           const active = i === activeLineIdx;
@@ -672,65 +762,118 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                       </div>
                     </>
                   ) : (
-                    <pre className={`whitespace-pre-wrap font-sans ${plainTextClass} leading-relaxed text-zinc-700 dark:text-zinc-300`}>
-                      {lyrics.plainText}
-                    </pre>
+                    <div className="space-y-3">
+                      {shareableLyricLines.length > 0 && (
+                        <div className="sticky top-0 z-20 flex justify-end pointer-events-none">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShareInitialLine(0);
+                              setShareLyricsOpen(true);
+                            }}
+                            className="pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full ios-glass-pill text-xs font-semibold text-zinc-800 dark:text-zinc-100 hover:text-[#FF4D2E] shadow-sm active:scale-95 transition-all"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-[#FF4D2E]" />
+                            <span>Share Lyrics</span>
+                          </button>
+                        </div>
+                      )}
+                      <pre className={`whitespace-pre-wrap font-sans ${plainTextClass} leading-relaxed text-zinc-700 dark:text-zinc-300`}>
+                        {lyrics.plainText}
+                      </pre>
+                    </div>
                   )
                 ) : queue.length === 0 ? (
                   <div className="py-16 text-center text-sm text-zinc-500 dark:text-zinc-400">
                     Queue is empty.
                   </div>
                 ) : (
-                  <div className="space-y-1">
-                    {queue.map((item, idx) => {
-                      const active = idx === queueIndex;
-                      return (
-                        <div
-                          key={`${item.id}-${idx}`}
-                          className={`flex items-center gap-3 px-3 py-2 rounded-2xl transition-colors ${
-                            active
-                              ? 'bg-white/75 dark:bg-white/[0.11] shadow-xs'
-                              : 'hover:bg-white/50 dark:hover:bg-white/[0.06]'
-                          }`}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-2 pb-2 border-b border-black/[0.06] dark:border-white/[0.08]">
+                      <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                        Up Next ({queue.length})
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={shuffleQueue}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full ios-glass-pill text-[11px] font-medium text-zinc-700 dark:text-zinc-200 hover:text-[#FF4D2E] active:scale-95 transition-all"
                         >
-                          <span className="w-6 text-xs font-mono tabular-nums text-zinc-400">
-                            {String(idx + 1).padStart(2, '0')}
-                          </span>
+                          <Shuffle className="w-3 h-3" />
+                          <span>Shuffle Upcoming</span>
+                        </button>
+                        {queue.length > 1 && (
                           <button
                             type="button"
-                            onClick={() => playFromQueueIndex(idx)}
-                            className="flex items-center gap-3 min-w-0 flex-1 text-left"
+                            onClick={clearQueue}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full ios-glass-pill text-[11px] font-medium text-zinc-600 dark:text-zinc-300 hover:text-red-500 active:scale-95 transition-all"
                           >
-                            <Artwork src={item.artwork} alt={item.title} className="w-10 h-10" rounded="rounded-xl" thumb />
-                            <div className="min-w-0">
-                              <div
-                                className={`text-sm font-medium truncate ${
-                                  active ? 'text-[#FF4D2E]' : 'text-zinc-900 dark:text-zinc-100'
-                                }`}
-                              >
-                                {item.title}
-                              </div>
-                              <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                                {item.artist}
-                              </div>
-                            </div>
+                            <Trash2 className="w-3 h-3" />
+                            <span>Clear</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => removeFromQueue(idx)}
-                            aria-label={`Remove ${item.title} from queue`}
-                            className="p-1.5 text-zinc-400 hover:text-red-500"
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      {queue.map((item, idx) => {
+                        const active = idx === queueIndex;
+                        return (
+                          <div
+                            key={`${item.id}-${idx}`}
+                            className={`flex items-center gap-3 px-3 py-2 rounded-2xl transition-colors ${
+                              active
+                                ? 'bg-white/75 dark:bg-white/[0.11] shadow-xs'
+                                : 'hover:bg-white/50 dark:hover:bg-white/[0.06]'
+                            }`}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
+                            <span className="w-6 text-xs font-mono tabular-nums text-zinc-400">
+                              {String(idx + 1).padStart(2, '0')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => playFromQueueIndex(idx)}
+                              className="flex items-center gap-3 min-w-0 flex-1 text-left"
+                            >
+                              <Artwork src={item.artwork} alt={item.title} className="w-10 h-10" rounded="rounded-xl" thumb />
+                              <div className="min-w-0">
+                                <div
+                                  className={`text-sm font-medium truncate ${
+                                    active ? 'text-[#FF4D2E]' : 'text-zinc-900 dark:text-zinc-100'
+                                  }`}
+                                >
+                                  {item.title}
+                                </div>
+                                <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                                  {item.artist}
+                                </div>
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeFromQueue(idx)}
+                              aria-label={`Remove ${item.title} from queue`}
+                              className="p-1.5 text-zinc-400 hover:text-red-500"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
             </div>
           </div>
+
+          <ShareLyricsModal
+            open={shareLyricsOpen}
+            onClose={() => setShareLyricsOpen(false)}
+            track={currentTrack}
+            lyricLines={shareableLyricLines}
+            initialLineIndex={shareInitialLine}
+          />
         </motion.div>
       )}
     </AnimatePresence>

@@ -3,6 +3,7 @@ import { Heart, ListMusic, Play, Plus, Trash2, Users } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import { formatRegionLabel } from '../utils/format';
 import { Artwork } from './Artwork';
+import { CollaborativePlaylistsSection } from './CollaborativePlaylistsSection';
 import { TrackRow } from './TrackRow';
 
 interface LibraryViewProps {
@@ -11,6 +12,8 @@ interface LibraryViewProps {
   onArtistClick: (name: string) => void;
   onAlbumClick: (title: string, artist: string) => void;
   onExploreClick: () => void;
+  initialJoinCode?: string | null;
+  onClearJoinCode?: () => void;
 }
 
 export function LibraryView({
@@ -19,6 +22,8 @@ export function LibraryView({
   onArtistClick,
   onAlbumClick,
   onExploreClick,
+  initialJoinCode,
+  onClearJoinCode,
 }: LibraryViewProps) {
   const {
     likedTracks,
@@ -237,6 +242,14 @@ export function LibraryView({
           </div>
         )}
       </section>
+
+      {/* Collaborative Real-Time Playlists */}
+      <CollaborativePlaylistsSection
+        initialJoinCode={initialJoinCode}
+        onClearJoinCode={onClearJoinCode}
+        onArtistClick={onArtistClick}
+        onAlbumClick={onAlbumClick}
+      />
 
       {/* Liked Songs */}
       <section className="space-y-3">

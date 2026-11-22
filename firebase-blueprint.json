@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "Audixify user profile, customizable handle, avatar, and persisted playback settings.",
+      "description": "Audixify user profile, customizable handle, avatar, daily streak, collectible badges, and persisted playback settings.",
       "type": "object",
       "properties": {
         "uid": {
@@ -70,6 +70,36 @@
           "enum": ["dark", "light"],
           "description": "Studio Light or Obsidian Dark theme preference."
         },
+        "streakCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3650,
+          "description": "Consecutive daily check-in streak count."
+        },
+        "longestStreak": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3650,
+          "description": "All-time longest daily check-in streak."
+        },
+        "lastCheckInDate": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 10,
+          "description": "YYYY-MM-DD of the most recent daily streak check-in."
+        },
+        "badges": {
+          "type": "array",
+          "description": "Unlocked collectible badge IDs (max 20)."
+        },
+        "greenBadgeUnlocked": {
+          "type": "boolean",
+          "description": "Unlocked upon reaching a 30-day consecutive login streak."
+        },
+        "greenBadgeEnabled": {
+          "type": "boolean",
+          "description": "User preference to display or hide their unlocked green verified checkmark."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -112,6 +142,88 @@
         }
       },
       "required": ["uid", "likedTracks", "followedArtists", "playlists", "updatedAt"]
+    },
+    "SharedPlaylist": {
+      "title": "SharedPlaylist",
+      "description": "Real-time collaborative playlist shared among Audixify users via invite code.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "description": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 180
+        },
+        "inviteCode": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 32
+        },
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ownerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "UIDs of collaborators (max 25)."
+        },
+        "members": {
+          "type": "array",
+          "description": "Public display summaries of collaborators (max 25)."
+        },
+        "tracks": {
+          "type": "array",
+          "description": "Shared tracklist (max 100 tracks)."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "updatedByName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "inviteCode",
+        "ownerUid",
+        "ownerName",
+        "memberUids",
+        "members",
+        "tracks",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "SupportThread": {
       "title": "SupportThread",
@@ -240,11 +352,15 @@
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
-      "description": "Authenticated user profile and app preferences."
+      "description": "Authenticated user profile, streak badges, and app preferences."
     },
     "/userLibraries/{userId}": {
       "schema": { "$ref": "#/entities/UserLibraryState" },
       "description": "User synced likes, followed artists, and playlists."
+    },
+    "/sharedPlaylists/{playlistId}": {
+      "schema": { "$ref": "#/entities/SharedPlaylist" },
+      "description": "Collaborative real-time playlists shared via invite code."
     },
     "/supportThreads/{threadId}": {
       "schema": { "$ref": "#/entities/SupportThread" },

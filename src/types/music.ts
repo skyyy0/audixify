@@ -157,3 +157,11 @@ export interface GenreDefinition {
   label: string;
   regionLabel: string;
 }
+
+export interface ReleaseRadarPayload {
+  tracks: Track[];
+  releases: AlbumSummary[];
+  artistsChecked: string[];
+  fetchedAt: string;
+}
+

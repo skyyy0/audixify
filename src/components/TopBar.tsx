@@ -6,7 +6,7 @@ import { usePlayer } from '../context/PlayerContext';
 import type { RegionScope } from '../types/music';
 import { IOS_SPRING_SNAPPY } from '../utils/motion';
 import { BrandMark } from './BrandMark';
-import { DeveloperBadge } from './DeveloperBadge';
+import { DeveloperBadge, GreenVerifiedBadge } from './VerifiedBadge';
 
 interface TopBarProps {
   searchQuery: string;
@@ -35,7 +35,7 @@ export function TopBar({
   onProfileClick,
 }: TopBarProps) {
   const { theme, toggleTheme } = usePlayer();
-  const { user, profile, isDeveloper } = useAuth();
+  const { user, profile, isDeveloper, showGreenCheckmark } = useAuth();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const avatarSrc = profile?.avatarDataUrl || user?.photoURL || '';
 
@@ -166,11 +166,15 @@ export function TopBar({
             ) : (
               <User className="w-4 h-4" />
             )}
-            {isDeveloper && (
+            {isDeveloper ? (
               <span className="absolute -bottom-1 -right-1 scale-75">
                 <DeveloperBadge />
               </span>
-            )}
+            ) : showGreenCheckmark ? (
+              <span className="absolute -bottom-1 -right-1 scale-75">
+                <GreenVerifiedBadge />
+              </span>
+            ) : null}
           </button>
         </div>
       </div>

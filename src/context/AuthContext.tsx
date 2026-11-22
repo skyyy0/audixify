@@ -18,6 +18,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -32,6 +33,7 @@ import {
 import {
   PROFILE_CONSTRAINTS,
   type AppPreferences,
+  type BadgeId,
   type UserProfile,
 } from '../types/account';
 import type { ArtistSummary, Track, UserPlaylist } from '../types/music';
@@ -43,6 +45,30 @@ const DEFAULT_PREFERENCES: AppPreferences = {
   defaultRegion: 'all',
   autoplay: true,
 };
+
+function getLocalDateKey(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getYesterdayDateKey(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return getLocalDateKey(d);
+}
+
+function computeBadgesForStreak(existingBadges: BadgeId[], nextStreak: number): BadgeId[] {
+  const set = new Set<BadgeId>(existingBadges);
+  if (nextStreak >= 3) set.add('streak_3');
+  if (nextStreak >= 7) set.add('streak_7');
+  if (nextStreak >= 30) {
+    set.add('streak_30_crown');
+    set.add('streak_30_pioneer');
+  }
+  return Array.from(set);
+}
 
 function readStoredPrefs(): AppPreferences {
   try {
@@ -116,6 +142,9 @@ interface AuthContextValue {
   profile: UserProfile | null;
   profileLoading: boolean;
   isDeveloper: boolean;
+  showGreenCheckmark: boolean;
+  streakBannerMessage: string | null;
+  dismissStreakBanner: () => void;
   preferences: AppPreferences;
   signingIn: boolean;
   authError: string | null;
@@ -128,6 +157,7 @@ interface AuthContextValue {
     bio?: string;
     avatarDataUrl?: string;
   }) => Promise<void>;
+  toggleGreenCheckmark: (enabled: boolean) => Promise<void>;
   syncLibraryToCloud: (data: {
     likedTracks: Track[];
     followedArtists: ArtistSummary[];
@@ -150,6 +180,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState<AppPreferences>(() => readStoredPrefs());
   const [signingIn, setSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [streakBannerMessage, setStreakBannerMessage] = useState<string | null>(null);
+  const checkedInDateRef = useRef<string>('');
+
+  const dismissStreakBanner = useCallback(() => setStreakBannerMessage(null), []);
 
   useEffect(() => {
     applyPerfAttribute(preferences.perfMode);
@@ -165,12 +199,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!nextUser) {
         setProfile(null);
         setProfileLoading(false);
+        checkedInDateRef.current = '';
       }
     });
     return () => unsub();
   }, []);
 
-  // Sync or bootstrap Firestore user profile only when authenticated
+  // Sync or bootstrap Firestore user profile + automatic Daily Streak check-in
   useEffect(() => {
     if (!authReady || !user) return;
 
@@ -183,6 +218,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const snap = await getDoc(docRef);
         const dev = isDeveloperUser(user);
+        const today = getLocalDateKey();
+        const yesterday = getYesterdayDateKey();
+
         if (!snap.exists()) {
           const currentTheme =
             localStorage.getItem('audixify_theme') === 'light' ? 'light' : 'dark';
@@ -207,9 +245,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             defaultRegion: preferences.defaultRegion,
             autoplay: preferences.autoplay,
             theme: currentTheme,
+            streakCount: 1,
+            longestStreak: 1,
+            lastCheckInDate: today,
+            badges: [],
+            greenBadgeUnlocked: false,
+            greenBadgeEnabled: false,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
+          checkedInDateRef.current = today;
         } else {
           const data = snap.data() as Partial<UserProfile>;
           if (Boolean(data.isDeveloper) !== dev) {
@@ -218,13 +263,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               updatedAt: serverTimestamp(),
             });
           }
+
+          const lastDate = typeof data.lastCheckInDate === 'string' ? data.lastCheckInDate : '';
+          if (lastDate !== today && checkedInDateRef.current !== today) {
+            checkedInDateRef.current = today;
+            const prevStreak = typeof data.streakCount === 'number' ? data.streakCount : 0;
+            const prevLongest = typeof data.longestStreak === 'number' ? data.longestStreak : 0;
+            const prevBadges = Array.isArray(data.badges) ? (data.badges as BadgeId[]) : [];
+            const prevGreenUnlocked = Boolean(data.greenBadgeUnlocked);
+            const prevGreenEnabled = Boolean(data.greenBadgeEnabled);
+
+            const nextStreak = lastDate === yesterday ? prevStreak + 1 : 1;
+            const nextLongest = Math.max(prevLongest, nextStreak);
+            const nextBadges = computeBadgesForStreak(prevBadges, nextStreak);
+            const newlyUnlocked30 = nextStreak >= 30 && !prevGreenUnlocked;
+            const nextGreenUnlocked = prevGreenUnlocked || nextStreak >= 30;
+            const nextGreenEnabled = newlyUnlocked30 ? true : prevGreenEnabled;
+
+            await updateDoc(docRef, {
+              streakCount: nextStreak,
+              longestStreak: nextLongest,
+              lastCheckInDate: today,
+              badges: nextBadges,
+              greenBadgeUnlocked: nextGreenUnlocked,
+              greenBadgeEnabled: nextGreenEnabled,
+              updatedAt: serverTimestamp(),
+            });
+
+            if (active) {
+              if (newlyUnlocked30) {
+                setStreakBannerMessage(
+                  '30-Day Streak! Unlocked 2 Special Badges + Green Verified Checkmark!',
+                );
+              } else if (nextStreak === 7) {
+                setStreakBannerMessage('7-Day Streak! Unlocked 7-Day Devotee Special Badge!');
+              } else if (nextStreak === 3) {
+                setStreakBannerMessage('3-Day Streak! Unlocked 3-Day Rhythm Badge!');
+              } else if (nextStreak > 1) {
+                setStreakBannerMessage(`Daily Streak: ${nextStreak} hari berturut-turut!`);
+              }
+            }
+          }
         }
       } catch (err) {
         if (active) {
           try {
             handleFirestoreError(err, OperationType.WRITE, profilePath);
           } catch {
-            // Surface cleanly through authError state
             setAuthError('Unable to load cloud profile. Local settings remain active.');
           }
         }
@@ -263,6 +348,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   : 'all',
               autoplay: typeof d.autoplay === 'boolean' ? d.autoplay : true,
               theme: d.theme === 'light' ? 'light' : 'dark',
+              streakCount: typeof d.streakCount === 'number' ? d.streakCount : 1,
+              longestStreak: typeof d.longestStreak === 'number' ? d.longestStreak : 1,
+              lastCheckInDate: typeof d.lastCheckInDate === 'string' ? d.lastCheckInDate : '',
+              badges: Array.isArray(d.badges) ? (d.badges as BadgeId[]) : [],
+              greenBadgeUnlocked: Boolean(d.greenBadgeUnlocked),
+              greenBadgeEnabled: Boolean(d.greenBadgeEnabled),
             };
             setProfile(nextProfile);
             setPreferences({
@@ -411,6 +502,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user, profile],
   );
 
+  const toggleGreenCheckmark = useCallback(
+    async (enabled: boolean) => {
+      if (!user) throw new Error('Sign in with Google first.');
+      if (!profile?.greenBadgeUnlocked) {
+        throw new Error('Reach a 30-day consecutive login streak to unlock the green checkmark.');
+      }
+      const profilePath = `users/${user.uid}`;
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          greenBadgeEnabled: enabled,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, profilePath);
+      }
+    },
+    [user, profile?.greenBadgeUnlocked],
+  );
+
   const syncLibraryToCloud = useCallback(
     async (data: {
       likedTracks: Track[];
@@ -462,6 +572,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user, profile?.isDeveloper],
   );
 
+  const showGreenCheckmark = useMemo(
+    () => Boolean(profile?.greenBadgeUnlocked && profile?.greenBadgeEnabled),
+    [profile?.greenBadgeUnlocked, profile?.greenBadgeEnabled],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -469,6 +584,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       profileLoading,
       isDeveloper,
+      showGreenCheckmark,
+      streakBannerMessage,
+      dismissStreakBanner,
       preferences,
       signingIn,
       authError,
@@ -476,6 +594,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOutUser,
       updatePreferences,
       updateProfileFields,
+      toggleGreenCheckmark,
       syncLibraryToCloud,
       fetchLibraryFromCloud,
     }),
@@ -485,6 +604,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       profileLoading,
       isDeveloper,
+      showGreenCheckmark,
+      streakBannerMessage,
+      dismissStreakBanner,
       preferences,
       signingIn,
       authError,
@@ -492,6 +614,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOutUser,
       updatePreferences,
       updateProfileFields,
+      toggleGreenCheckmark,
       syncLibraryToCloud,
       fetchLibraryFromCloud,
     ],

@@ -7,6 +7,7 @@ import { apiFetch } from '../utils/apiFetch';
 import { formatDuration, formatRegionLabel } from '../utils/format';
 import { IOS_SPRING_SNAPPY } from '../utils/motion';
 import { Artwork } from './Artwork';
+import { ReleaseRadarSection } from './ReleaseRadarSection';
 import { TrackCard } from './TrackCard';
 import { TrackRow } from './TrackRow';
 
@@ -579,6 +580,9 @@ export function DiscoverView({
               </div>
             </section>
           )}
+
+          {/* Release Radar from Followed Artists */}
+          <ReleaseRadarSection onArtistClick={onArtistClick} onAlbumClick={onAlbumClick} />
 
           {/* Popular Artists Strip */}
           {trendingArtists.length > 0 && (

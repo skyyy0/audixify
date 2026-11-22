@@ -5,6 +5,8 @@ import {
   CloudDownload,
   CloudUpload,
   Cpu,
+  Download,
+  Flame,
   Gauge,
   Globe,
   Info,
@@ -33,21 +35,32 @@ import {
 import type { RegionScope } from '../types/music';
 import { compressImageFile } from '../utils/imageCompress';
 import { IOS_SPRING_SNAPPY } from '../utils/motion';
-import { DeveloperBadge } from './DeveloperBadge';
+import { DeveloperBadge, GreenVerifiedBadge } from './VerifiedBadge';
 import { AboutSkyPage } from './profile/AboutSkyPage';
+import { StreakBadgeVault } from './profile/StreakBadgeVault';
 
 export type ProfileTab = 'account' | 'settings' | 'about';
 
 interface ProfileViewProps {
   onApplyDefaultRegion: (scope: RegionScope) => void;
   onOpenSupportPage: () => void;
+  pwaState?: {
+    isStandalone: boolean;
+    snoozeRemainingHours: number;
+    onOpenInstallPrompt: () => void;
+  };
 }
 
-export function ProfileView({ onApplyDefaultRegion, onOpenSupportPage }: ProfileViewProps) {
+export function ProfileView({
+  onApplyDefaultRegion,
+  onOpenSupportPage,
+  pwaState,
+}: ProfileViewProps) {
   const {
     user,
     profile,
     isDeveloper,
+    showGreenCheckmark,
     preferences,
     signingIn,
     authError,
@@ -68,6 +81,8 @@ export function ProfileView({ onApplyDefaultRegion, onOpenSupportPage }: Profile
     restoreLibraryFromCloudData,
     clearListeningHistory,
     showToast,
+    eqSettings,
+    setEqModalOpen,
   } = usePlayer();
 
   const [tab, setTab] = useState<ProfileTab>('account');
@@ -219,6 +234,13 @@ export function ProfileView({ onApplyDefaultRegion, onOpenSupportPage }: Profile
                   {effectiveName}
                 </h1>
                 {isDeveloper && <DeveloperBadge showLabel size="md" />}
+                {showGreenCheckmark && <GreenVerifiedBadge showLabel size="md" />}
+                {(profile?.streakCount ?? 0) >= 1 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-[#FF4D2E]/15 text-[#FF4D2E]">
+                    <Flame className="w-3 h-3" />
+                    <span>{profile?.streakCount}d Streak</span>
+                  </span>
+                )}
               </div>
               <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 truncate">
                 {effectiveUsername}
@@ -309,19 +331,25 @@ export function ProfileView({ onApplyDefaultRegion, onOpenSupportPage }: Profile
 
       {/* Tab Content */}
       {tab === 'account' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          {user ? (
-            <>
-              <form
-                onSubmit={handleSaveProfile}
-                className="lg:col-span-7 rounded-[28px] ios-glass p-6 space-y-4"
-              >
-                <div className="flex items-center justify-between">
-                  <h2 className="font-display text-lg font-bold text-zinc-950 dark:text-white">
-                    Edit Profile
-                  </h2>
-                  {isDeveloper && <DeveloperBadge showLabel />}
-                </div>
+        <div className="space-y-5">
+          <StreakBadgeVault />
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {user ? (
+              <>
+                <form
+                  onSubmit={handleSaveProfile}
+                  className="lg:col-span-7 rounded-[28px] ios-glass p-6 space-y-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <h2 className="font-display text-lg font-bold text-zinc-950 dark:text-white">
+                      Edit Profile
+                    </h2>
+                    <div className="flex items-center gap-1.5">
+                      {isDeveloper && <DeveloperBadge showLabel />}
+                      {showGreenCheckmark && <GreenVerifiedBadge showLabel />}
+                    </div>
+                  </div>
 
                 {formError && (
                   <p className="text-xs text-red-500 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
@@ -478,7 +506,8 @@ export function ProfileView({ onApplyDefaultRegion, onOpenSupportPage }: Profile
                 </button>
               </div>
             </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
@@ -659,6 +688,56 @@ export function ProfileView({ onApplyDefaultRegion, onOpenSupportPage }: Profile
                 />
               </button>
             </div>
+          </section>
+
+          {/* Equalizer & PWA Install */}
+          <section className="rounded-[28px] ios-glass divide-y divide-black/[0.06] dark:divide-white/[0.07] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setEqModalOpen(true)}
+              className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-white/50 dark:hover:bg-white/[0.05] transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Sliders className="w-4 h-4 text-[#FF4D2E]" />
+                <div>
+                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    5-Band Audio Equalizer &amp; Presets
+                  </div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {eqSettings.enabled
+                      ? `Active (${eqSettings.presetId} · ${eqSettings.playbackRate}x speed)`
+                      : 'Bypassed — tap to tune Bass Boost, Pop Indo, Vocal Clear, & more'}
+                  </div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-zinc-400" />
+            </button>
+
+            {pwaState && (
+              <button
+                type="button"
+                disabled={pwaState.isStandalone}
+                onClick={pwaState.onOpenInstallPrompt}
+                className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-white/50 dark:hover:bg-white/[0.05] transition-colors disabled:opacity-65"
+              >
+                <div className="flex items-center gap-3">
+                  <Download className="w-4 h-4 text-[#FF4D2E]" />
+                  <div>
+                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                      {pwaState.isStandalone ? 'Audixify PWA Installed' : 'Install Audixify App (PWA)'}
+                    </div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {pwaState.isStandalone
+                        ? 'Running in standalone fullscreen mode'
+                        : pwaState.snoozeRemainingHours > 0
+                          ? `Popup pengingat ditunda (~${pwaState.snoozeRemainingHours} jam lagi) · tap untuk install sekarang`
+                          : 'Pasang di layar utama untuk tampilan fullscreen & akses lebih cepat'}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-400" />
+              </button>
+            )}
           </section>
 
           {/* Support Chat, About sky & Storage */}

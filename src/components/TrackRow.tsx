@@ -8,8 +8,10 @@ import {
   Play,
   Plus,
   Trash2,
+  Users,
 } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
+import { useSharedPlaylistsContext } from '../context/SharedPlaylistsContext';
 import type { Track } from '../types/music';
 import { formatDuration, formatRegionLabel } from '../utils/format';
 import { Artwork } from './Artwork';
@@ -49,7 +51,9 @@ export const TrackRow = memo(function TrackRow({
     playlists,
     addTrackToPlaylist,
     createPlaylist,
+    showToast,
   } = usePlayer();
+  const { sharedPlaylists, addTrackToSharedPlaylist } = useSharedPlaylistsContext();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -331,6 +335,35 @@ export const TrackRow = memo(function TrackRow({
                     </button>
                   ))}
                 </div>
+              )}
+
+              {sharedPlaylists.length > 0 && (
+                <>
+                  <div className="my-1 border-t border-black/[0.06] dark:border-white/[0.08]" />
+                  <div className="px-3 py-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+                    <Users className="w-3 h-3 text-[#FF4D2E]" />
+                    <span>Playlist Bersama</span>
+                  </div>
+                  <div className="max-h-28 overflow-y-auto space-y-0.5">
+                    {sharedPlaylists.map((spl) => (
+                      <button
+                        key={spl.id}
+                        type="button"
+                        onClick={() => {
+                          void addTrackToSharedPlaylist(spl.id, track).then((status) => {
+                            if (status === 'added') showToast(`Added to ${spl.name}`);
+                            else if (status === 'exists') showToast(`Already in ${spl.name}`);
+                          });
+                          setMenuOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-left text-zinc-800 dark:text-zinc-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] truncate"
+                      >
+                        <span className="truncate">{spl.name}</span>
+                        <Plus className="w-3 h-3 shrink-0 text-[#FF4D2E]" />
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
 
               <form onSubmit={handleCreateAndAdd} className="mt-1 flex items-center gap-1 px-1.5 pb-1">

@@ -16,6 +16,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Sliders,
   User,
   Volume2,
   VolumeX,
@@ -34,10 +35,11 @@ interface PlayerBarProps {
 
 function PlayerBarScrubber({ fallbackDuration }: { fallbackDuration: number }) {
   const { currentTime, duration } = usePlayerProgress();
-  const { seekTo } = usePlayer();
+  const { seekTo, showRemainingTime, toggleRemainingTime } = usePlayer();
   const effectiveDuration = duration > 0 ? duration : fallbackDuration;
   const progressPct =
     effectiveDuration > 0 ? Math.min(100, (currentTime / effectiveDuration) * 100) : 0;
+  const remainingSec = Math.max(0, effectiveDuration - currentTime);
 
   return (
     <div className="w-full flex items-center gap-2.5">
@@ -56,9 +58,15 @@ function PlayerBarScrubber({ fallbackDuration }: { fallbackDuration: number }) {
           background: `linear-gradient(to right, #FF4D2E ${progressPct}%, rgba(161,161,170,0.28) ${progressPct}%)`,
         }}
       />
-      <span className="text-[11px] font-mono tabular-nums text-zinc-500 dark:text-zinc-400 w-9">
-        {formatDuration(effectiveDuration)}
-      </span>
+      <button
+        type="button"
+        onClick={toggleRemainingTime}
+        title="Click to toggle remaining / total time"
+        aria-label="Toggle remaining time"
+        className="text-[11px] font-mono tabular-nums text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white w-11 text-left transition-colors"
+      >
+        {showRemainingTime ? `-${formatDuration(remainingSec)}` : formatDuration(effectiveDuration)}
+      </button>
     </div>
   );
 }
@@ -101,6 +109,8 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
     cycleRepeat,
     isLiked,
     toggleLike,
+    eqSettings,
+    setEqModalOpen,
   } = usePlayer();
 
   const volPct = Math.round((muted ? 0 : volume) * 100);
@@ -255,8 +265,21 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
 
             {/* Right: Watch MV, Lyrics & Volume */}
             <div className="flex items-center gap-1 md:w-auto lg:w-[26%] shrink-0 justify-end">
-              {/* Mobile quick MV + Play + Next (>=40px touch targets) */}
+              {/* Mobile quick EQ + MV + Play + Next (>=40px touch targets) */}
               <div className="flex md:hidden items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setEqModalOpen(true)}
+                  aria-label="Open 5-Band Equalizer"
+                  className={`relative min-w-[38px] min-h-[40px] flex items-center justify-center rounded-full active:scale-90 transition-transform ${
+                    eqSettings.enabled ? 'text-[#FF4D2E]' : 'text-zinc-600 dark:text-zinc-300'
+                  }`}
+                >
+                  <Sliders className="w-4 h-4" />
+                  {eqSettings.enabled && (
+                    <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#FF4D2E]" />
+                  )}
+                </button>
                 <button
                   type="button"
                   onClick={() => openMusicVideo(currentTrack)}
@@ -302,7 +325,24 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
                 </button>
               )}
 
-              {/* Desktop MV, Lyrics & Volume */}
+              {/* Desktop EQ, MV, Lyrics & Volume */}
+              <button
+                type="button"
+                onClick={() => setEqModalOpen(true)}
+                title="5-Band Equalizer (Shortcut: E)"
+                aria-label="Open 5-Band Equalizer"
+                className={`relative hidden md:flex min-w-[34px] min-h-[34px] items-center justify-center rounded-full active:scale-90 transition-all ${
+                  eqSettings.enabled
+                    ? 'text-[#FF4D2E] bg-[#FF4D2E]/10'
+                    : 'text-zinc-500 hover:text-zinc-950 dark:hover:text-white'
+                }`}
+              >
+                <Sliders className="w-4 h-4" />
+                {eqSettings.enabled && (
+                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#FF4D2E]" />
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={() => openMusicVideo(currentTrack)}

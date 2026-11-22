@@ -10,11 +10,20 @@
   },
   "rewrites": [
     {
-      "source": "/((?!api/|robots\\.txt).*)",
+      "source": "/((?!api/|robots\\.txt|manifest\\.webmanifest|sw\\.js|workbox-.*\\.js|registerSW\\.js|icon\\.svg|pwa-.*\\.png|apple-touch-icon\\.png).*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
+    {
+      "source": "/(sw\\.js|manifest\\.webmanifest|registerSW\\.js)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [

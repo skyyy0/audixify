@@ -1,10 +1,60 @@
-import type { RegionScope } from './music';
+import type { RegionScope, Track } from './music';
 
 export type PerfMode = 'auto' | 'lite' | 'full';
 export type AudioQuality = 'auto' | 'high' | 'saver';
 export type LyricsSize = 'compact' | 'standard' | 'large';
 export type SupportCategory = 'bug' | 'stream' | 'feature' | 'general';
 export type SupportStatus = 'open' | 'resolved';
+
+export type BadgeId =
+  | 'streak_3'
+  | 'streak_7'
+  | 'streak_30_crown'
+  | 'streak_30_pioneer';
+
+export interface BadgeDefinition {
+  id: BadgeId;
+  title: string;
+  subtitle: string;
+  requiredDays: number;
+  tier: 'bronze' | 'special' | 'legend';
+  accent: string;
+}
+
+export const BADGE_CATALOG: BadgeDefinition[] = [
+  {
+    id: 'streak_3',
+    title: '3-Day Rhythm',
+    subtitle: 'Login 3 hari berturut-turut di Audixify',
+    requiredDays: 3,
+    tier: 'bronze',
+    accent: '#F59E0B',
+  },
+  {
+    id: 'streak_7',
+    title: '7-Day Devotee',
+    subtitle: 'Login 7 hari berturut-turut — Spesial Mingguan',
+    requiredDays: 7,
+    tier: 'special',
+    accent: '#8B5CF6',
+  },
+  {
+    id: 'streak_30_crown',
+    title: '30-Day Crown',
+    subtitle: 'Konsisten 30 hari penuh tanpa putus',
+    requiredDays: 30,
+    tier: 'legend',
+    accent: '#10B981',
+  },
+  {
+    id: 'streak_30_pioneer',
+    title: 'Verified Legend',
+    subtitle: 'Membuka centang hijau eksklusif di profilmu',
+    requiredDays: 30,
+    tier: 'legend',
+    accent: '#FF4D2E',
+  },
+];
 
 export interface AppPreferences {
   perfMode: PerfMode;
@@ -27,6 +77,37 @@ export interface UserProfile {
   defaultRegion: RegionScope;
   autoplay: boolean;
   theme: 'dark' | 'light';
+  streakCount: number;
+  longestStreak: number;
+  lastCheckInDate: string;
+  badges: BadgeId[];
+  greenBadgeUnlocked: boolean;
+  greenBadgeEnabled: boolean;
+}
+
+export interface SharedPlaylistMember {
+  uid: string;
+  displayName: string;
+  username: string;
+  avatarDataUrl: string;
+  isDeveloper: boolean;
+  greenBadge: boolean;
+}
+
+export interface SharedPlaylist {
+  id: string;
+  name: string;
+  description: string;
+  inviteCode: string;
+  ownerUid: string;
+  ownerName: string;
+  memberUids: string[];
+  members: SharedPlaylistMember[];
+  tracks: Track[];
+  updatedByUid: string;
+  updatedByName: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 }
 
 export interface SupportThread {

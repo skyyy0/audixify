@@ -11,6 +11,7 @@ import {
   getDiscoverCatalog,
   getGenreTracks,
   getMusicVideo,
+  getReleaseRadar,
   getTrackLyrics,
   isValidExternalMediaUrl,
   resolveAudioStream,
@@ -165,6 +166,28 @@ export function createApiApp(): express.Express {
     } catch (err) {
       res.status(502).json({
         error: err instanceof Error ? err.message : 'Failed to load album details',
+      });
+    }
+  });
+
+  app.get('/api/release-radar', antiBotApiGuard, async (req, res) => {
+    try {
+      const raw = String(req.query.artists || '').trim();
+      if (!raw) {
+        res.json({ tracks: [], releases: [], artistsChecked: [], fetchedAt: new Date().toISOString() });
+        return;
+      }
+      const names = raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 10);
+      const data = await getReleaseRadar(names);
+      res.setHeader('Cache-Control', 'public, max-age=180, stale-while-revalidate=300');
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'Failed to load release radar',
       });
     }
   });

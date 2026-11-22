@@ -57,6 +57,12 @@ service cloud.firestore {
           'defaultRegion',
           'autoplay',
           'theme',
+          'streakCount',
+          'longestStreak',
+          'lastCheckInDate',
+          'badges',
+          'greenBadgeUnlocked',
+          'greenBadgeEnabled',
           'createdAt',
           'updatedAt'
         ])
@@ -79,8 +85,33 @@ service cloud.firestore {
         && (!('defaultRegion' in data) || (data.defaultRegion is string && data.defaultRegion in ['all', 'id', 'asia', 'global']))
         && (!('autoplay' in data) || data.autoplay is bool)
         && (!('theme' in data) || (data.theme is string && data.theme in ['dark', 'light']))
+        && (!('streakCount' in data) || (data.streakCount is int && data.streakCount >= 0 && data.streakCount <= 3650))
+        && (!('longestStreak' in data) || (data.longestStreak is int && data.longestStreak >= 0 && data.longestStreak <= 3650))
+        && (!('lastCheckInDate' in data) || (data.lastCheckInDate is string && data.lastCheckInDate.size() <= 10 && data.lastCheckInDate.matches('^(\\d{4}-\\d{2}-\\d{2})?$')))
+        && (!('badges' in data) || (data.badges is list && data.badges.size() <= 20))
+        && (!('greenBadgeUnlocked' in data) || data.greenBadgeUnlocked is bool)
+        && (!('greenBadgeEnabled' in data) || data.greenBadgeEnabled is bool)
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
+    }
+
+    function isValidStreakCheckIn(data, prev) {
+      return ('streakCount' in data)
+        && ('longestStreak' in data)
+        && ('lastCheckInDate' in data)
+        && ('badges' in data)
+        && ('greenBadgeUnlocked' in data)
+        && ('greenBadgeEnabled' in data)
+        && data.lastCheckInDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (!('lastCheckInDate' in prev) || prev.lastCheckInDate == '' || data.lastCheckInDate > prev.lastCheckInDate)
+        && (!('streakCount' in prev) ? data.streakCount <= 1 : (data.streakCount >= 1 && data.streakCount <= prev.streakCount + 1))
+        && (!('longestStreak' in prev) ? data.longestStreak >= data.streakCount : (data.longestStreak >= prev.longestStreak && data.longestStreak >= data.streakCount))
+        && (!data.greenBadgeUnlocked || data.streakCount >= 30 || ('greenBadgeUnlocked' in prev && prev.greenBadgeUnlocked == true))
+        && (!data.greenBadgeEnabled || data.greenBadgeUnlocked == true)
+        && (!('streak_3' in data.badges) || data.streakCount >= 3 || ('badges' in prev && 'streak_3' in prev.badges))
+        && (!('streak_7' in data.badges) || data.streakCount >= 7 || ('badges' in prev && 'streak_7' in prev.badges))
+        && (!('streak_30_crown' in data.badges) || data.streakCount >= 30 || ('badges' in prev && 'streak_30_crown' in prev.badges))
+        && (!('streak_30_pioneer' in data.badges) || data.streakCount >= 30 || ('badges' in prev && 'streak_30_pioneer' in prev.badges));
     }
 
     function isValidUserLibraryState(data, userId) {
@@ -97,6 +128,74 @@ service cloud.firestore {
         && data.playlists is list
         && data.playlists.size() <= 40
         && (data.playlists.size() == 0 || data.playlists[0] is map)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSharedPlaylist(data, playlistId) {
+      return data.keys().hasAll([
+          'id',
+          'name',
+          'inviteCode',
+          'ownerUid',
+          'ownerName',
+          'memberUids',
+          'members',
+          'tracks',
+          'updatedByUid',
+          'updatedByName',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'name',
+          'description',
+          'inviteCode',
+          'ownerUid',
+          'ownerName',
+          'memberUids',
+          'members',
+          'tracks',
+          'updatedByUid',
+          'updatedByName',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == playlistId
+        && data.id.size() >= 6
+        && data.id.size() <= 32
+        && data.inviteCode is string
+        && data.inviteCode == playlistId
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 60
+        && (!('description' in data) || (data.description is string && data.description.size() <= 180))
+        && data.ownerUid is string
+        && data.ownerUid.size() >= 1
+        && data.ownerUid.size() <= 128
+        && data.ownerName is string
+        && data.ownerName.size() >= 1
+        && data.ownerName.size() <= 60
+        && data.memberUids is list
+        && data.memberUids.size() >= 1
+        && data.memberUids.size() <= 25
+        && data.ownerUid in data.memberUids
+        && data.members is list
+        && data.members.size() >= 1
+        && data.members.size() <= 25
+        && data.members.size() == data.memberUids.size()
+        && data.members[0] is map
+        && data.tracks is list
+        && data.tracks.size() <= 100
+        && (data.tracks.size() == 0 || data.tracks[0] is map)
+        && data.updatedByUid is string
+        && data.updatedByUid.size() >= 1
+        && data.updatedByUid.size() <= 128
+        && data.updatedByName is string
+        && data.updatedByName.size() >= 1
+        && data.updatedByName.size() <= 60
+        && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
 
@@ -186,6 +285,11 @@ service cloud.firestore {
       allow create: if isValidId(userId)
         && isOwner(userId)
         && isValidUserProfile(incoming(), userId)
+        && (!('streakCount' in incoming()) || incoming().streakCount <= 1)
+        && (!('longestStreak' in incoming()) || incoming().longestStreak <= 1)
+        && (!('badges' in incoming()) || incoming().badges.size() == 0)
+        && (!('greenBadgeUnlocked' in incoming()) || incoming().greenBadgeUnlocked == false)
+        && (!('greenBadgeEnabled' in incoming()) || incoming().greenBadgeEnabled == false)
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
 
@@ -199,19 +303,43 @@ service cloud.firestore {
           isAdmin()
           || (
             incoming().isDeveloper == existing().isDeveloper
-            && incoming().diff(existing()).affectedKeys().hasOnly([
-              'username',
-              'displayName',
-              'bio',
-              'avatarDataUrl',
-              'perfMode',
-              'audioQuality',
-              'lyricsSize',
-              'defaultRegion',
-              'autoplay',
-              'theme',
-              'updatedAt'
-            ])
+            && (
+              // Action 1: Profile & preferences edit
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'username',
+                'displayName',
+                'bio',
+                'avatarDataUrl',
+                'perfMode',
+                'audioQuality',
+                'lyricsSize',
+                'defaultRegion',
+                'autoplay',
+                'theme',
+                'updatedAt'
+              ])
+              // Action 2: Daily check-in streak progression
+              || (
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'streakCount',
+                  'longestStreak',
+                  'lastCheckInDate',
+                  'badges',
+                  'greenBadgeUnlocked',
+                  'greenBadgeEnabled',
+                  'updatedAt'
+                ])
+                && isValidStreakCheckIn(incoming(), existing())
+              )
+              // Action 3: Toggle green verified checkmark once unlocked
+              || (
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'greenBadgeEnabled',
+                  'updatedAt'
+                ])
+                && ('greenBadgeUnlocked' in existing() && existing().greenBadgeUnlocked == true)
+              )
+            )
           )
         );
 
@@ -240,6 +368,83 @@ service cloud.firestore {
         ]);
 
       allow delete: if isValidId(userId) && isOwner(userId);
+    }
+
+    match /sharedPlaylists/{playlistId} {
+      allow get: if isValidId(playlistId) && isVerifiedUser();
+      allow list: if isVerifiedUser() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isValidId(playlistId)
+        && isVerifiedUser()
+        && isValidSharedPlaylist(incoming(), playlistId)
+        && incoming().ownerUid == request.auth.uid
+        && incoming().updatedByUid == request.auth.uid
+        && request.auth.uid in incoming().memberUids
+        && incoming().memberUids.size() == 1
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(playlistId)
+        && isVerifiedUser()
+        && isValidSharedPlaylist(incoming(), playlistId)
+        && incoming().id == existing().id
+        && incoming().inviteCode == existing().inviteCode
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().ownerName == existing().ownerName
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().updatedByUid == request.auth.uid
+        && (
+          isAdmin()
+          // Action 1: Member updates tracks, title, or description
+          || (
+            request.auth.uid in existing().memberUids
+            && incoming().memberUids == existing().memberUids
+            && incoming().members == existing().members
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name',
+              'description',
+              'tracks',
+              'updatedByUid',
+              'updatedByName',
+              'updatedAt'
+            ])
+          )
+          // Action 2: User joins playlist via invite code
+          || (
+            !(request.auth.uid in existing().memberUids)
+            && existing().memberUids.size() < 25
+            && request.auth.uid in incoming().memberUids
+            && incoming().memberUids.hasAll(existing().memberUids)
+            && incoming().memberUids.size() == existing().memberUids.size() + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'memberUids',
+              'members',
+              'updatedByUid',
+              'updatedByName',
+              'updatedAt'
+            ])
+          )
+          // Action 3: Non-owner member leaves playlist
+          || (
+            request.auth.uid in existing().memberUids
+            && request.auth.uid != existing().ownerUid
+            && !(request.auth.uid in incoming().memberUids)
+            && existing().memberUids.hasAll(incoming().memberUids)
+            && incoming().memberUids.size() == existing().memberUids.size() - 1
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'memberUids',
+              'members',
+              'updatedByUid',
+              'updatedByName',
+              'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isValidId(playlistId)
+        && isVerifiedUser()
+        && (existing().ownerUid == request.auth.uid || isAdmin());
     }
 
     match /supportThreads/{threadId} {

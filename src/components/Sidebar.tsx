@@ -1,11 +1,11 @@
 import { LayoutGroup, motion } from 'motion/react';
 import { useState } from 'react';
-import { BarChart3, Compass, Heart, Library, ListMusic, Plus, Search, User } from 'lucide-react';
+import { BarChart3, Compass, Flame, Heart, Library, ListMusic, Plus, Search, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
 import { IOS_SPRING_SNAPPY } from '../utils/motion';
 import { BrandMark } from './BrandMark';
-import { DeveloperBadge } from './DeveloperBadge';
+import { DeveloperBadge, GreenVerifiedBadge } from './VerifiedBadge';
 
 export type NavDestination = 'discover' | 'charts' | 'search' | 'library' | 'profile' | 'playlist' | 'artist' | 'album';
 
@@ -17,7 +17,7 @@ interface SidebarProps {
 
 export function Sidebar({ activeView, activePlaylistId, onNavigate }: SidebarProps) {
   const { likedTracks, playlists, createPlaylist } = usePlayer();
-  const { profile, user, isDeveloper } = useAuth();
+  const { profile, user, isDeveloper, showGreenCheckmark } = useAuth();
   const [creating, setCreating] = useState(false);
   const [nameInput, setNameInput] = useState('');
 
@@ -86,9 +86,16 @@ export function Sidebar({ activeView, activePlaylistId, onNavigate }: SidebarPro
                     <Icon className={`relative z-10 w-4 h-4 shrink-0 transition-colors ${active ? 'text-[#FF4D2E]' : ''}`} />
                   )}
                   <span className="relative z-10 flex-1 text-left truncate">{item.label}</span>
-                  {item.id === 'profile' && isDeveloper && (
-                    <span className="relative z-10">
-                      <DeveloperBadge />
+                  {item.id === 'profile' && (
+                    <span className="relative z-10 flex items-center gap-1">
+                      {(profile?.streakCount ?? 0) >= 1 && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[#FF4D2E]/15 text-[#FF4D2E] text-[10px] font-mono font-bold">
+                          <Flame className="w-2.5 h-2.5" />
+                          <span>{profile?.streakCount}</span>
+                        </span>
+                      )}
+                      {isDeveloper && <DeveloperBadge />}
+                      {showGreenCheckmark && <GreenVerifiedBadge />}
                     </span>
                   )}
                 </motion.button>

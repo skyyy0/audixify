@@ -32,7 +32,7 @@ import {
   type SupportThread,
 } from '../../types/account';
 import { compressImageFile } from '../../utils/imageCompress';
-import { DeveloperBadge } from '../DeveloperBadge';
+import { DeveloperBadge, GreenVerifiedBadge } from '../VerifiedBadge';
 
 const CATEGORY_OPTIONS: Array<{ id: SupportCategory; label: string }> = [
   { id: 'bug', label: 'Bug Report' },
@@ -57,7 +57,7 @@ function formatFriendlySendError(err: unknown): string {
 }
 
 export function SupportChatSection({ fullScreen = false }: SupportChatSectionProps) {
-  const { user, profile, isDeveloper, preferences, signInWithGoogle, signingIn } = useAuth();
+  const { user, profile, isDeveloper, showGreenCheckmark, preferences, signInWithGoogle, signingIn } = useAuth();
   const { currentTrack, showToast } = usePlayer();
 
   const [threads, setThreads] = useState<SupportThread[]>([]);
@@ -512,6 +512,7 @@ export function SupportChatSection({ fullScreen = false }: SupportChatSectionPro
                         {msg.senderName}
                       </span>
                       {fromDev && <DeveloperBadge />}
+                      {!fromDev && isOwn && showGreenCheckmark && <GreenVerifiedBadge />}
                       {msg.senderUsername && <span>@{msg.senderUsername}</span>}
                     </div>
                     <div

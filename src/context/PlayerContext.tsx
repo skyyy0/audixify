@@ -17,6 +17,16 @@ import type {
   UserPlaylist,
 } from '../types/music';
 import { apiFetch } from '../utils/apiFetch';
+import {
+  clampEqDb,
+  DEFAULT_EQ_SETTINGS,
+  EQ_PRESETS,
+  loadEqualizerSettings,
+  saveEqualizerSettings,
+  WebAudioEqualizerEngine,
+  type EqPresetId,
+  type EqualizerSettings,
+} from '../utils/audioEqualizer';
 import { useAuth } from './AuthContext';
 
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -65,6 +75,8 @@ interface PlayerContextValue {
   addListToQueue: (tracks: Track[]) => void;
   playNextInQueue: (track: Track) => void;
   removeFromQueue: (index: number) => void;
+  shuffleQueue: () => void;
+  clearQueue: () => void;
   togglePlayPause: () => void;
   nextTrack: () => void;
   prevTrack: () => void;
@@ -87,6 +99,17 @@ interface PlayerContextValue {
     playlists: UserPlaylist[];
   }) => void;
   clearListeningHistory: () => void;
+  eqSettings: EqualizerSettings;
+  eqModalOpen: boolean;
+  setEqModalOpen: (open: boolean) => void;
+  setEqEnabled: (enabled: boolean) => void;
+  setEqBandGain: (bandIndex: number, gainDb: number) => void;
+  selectEqPreset: (presetId: Exclude<EqPresetId, 'custom'>) => void;
+  setPreampDb: (db: number) => void;
+  setPlaybackRate: (rate: number) => void;
+  resetEq: () => void;
+  showRemainingTime: boolean;
+  toggleRemainingTime: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -112,6 +135,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const eqEngineRef = useRef<WebAudioEqualizerEngine | null>(null);
   const requestSeqRef = useRef(0);
   const mvSeqRef = useRef(0);
   const currentTrackRef = useRef<Track | null>(null);
@@ -180,6 +204,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [followedArtists, setFollowedArtists] = useState<ArtistSummary[]>(() =>
     readStoredJson<ArtistSummary[]>('audixify_followed_artists', []),
   );
+  const [eqSettings, setEqSettings] = useState<EqualizerSettings>(() => loadEqualizerSettings());
+  const eqSettingsRef = useRef(eqSettings);
+  eqSettingsRef.current = eqSettings;
+  const [eqModalOpen, setEqModalOpen] = useState(false);
+  const [showRemainingTime, setShowRemainingTime] = useState(false);
 
   useEffect(() => {
     currentTrackRef.current = currentTrack;
@@ -252,10 +281,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    saveEqualizerSettings(eqSettings);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.playbackRate = eqSettings.playbackRate;
+      if (eqSettings.enabled) {
+        if (!eqEngineRef.current) eqEngineRef.current = new WebAudioEqualizerEngine();
+        if (eqEngineRef.current.ensureInitialized(audio)) {
+          eqEngineRef.current.applySettings(eqSettings);
+        }
+      } else if (eqEngineRef.current) {
+        eqEngineRef.current.applySettings(eqSettings);
+      }
+    }
+  }, [eqSettings]);
+
+  useEffect(() => {
     return () => {
       if (toastTimerRef.current !== null) {
         window.clearTimeout(toastTimerRef.current);
       }
+      eqEngineRef.current?.dispose();
     };
   }, []);
 
@@ -630,6 +676,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onPlay = () => {
       audio.muted = mutedRef.current;
       audio.volume = mutedRef.current ? 0 : volumeRef.current;
+      audio.playbackRate = eqSettingsRef.current.playbackRate;
+      if (eqSettingsRef.current.enabled) {
+        if (!eqEngineRef.current) eqEngineRef.current = new WebAudioEqualizerEngine();
+        if (eqEngineRef.current.ensureInitialized(audio)) {
+          eqEngineRef.current.applySettings(eqSettingsRef.current);
+        }
+      } else {
+        eqEngineRef.current?.resume();
+      }
       setIsPlaying(true);
       setIsBuffering(false);
       setStreamError(null);
@@ -640,6 +695,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onPlaying = () => {
       audio.muted = mutedRef.current;
       audio.volume = mutedRef.current ? 0 : volumeRef.current;
+      audio.playbackRate = eqSettingsRef.current.playbackRate;
       setIsBuffering(false);
       setIsPlaying(true);
       setStreamError(null);
@@ -911,6 +967,102 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [showToast],
   );
 
+  const shuffleQueue = useCallback(() => {
+    setQueue((prev) => {
+      if (prev.length <= 1) return prev;
+      const current = queueIndex >= 0 && queueIndex < prev.length ? prev[queueIndex] : null;
+      const rest = prev.filter((_, idx) => idx !== queueIndex);
+      for (let i = rest.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [rest[i], rest[j]] = [rest[j], rest[i]];
+      }
+      if (current) {
+        setQueueIndex(0);
+        return [current, ...rest];
+      }
+      return rest;
+    });
+    showToast('Queue shuffled');
+  }, [queueIndex, showToast]);
+
+  const clearQueue = useCallback(() => {
+    setQueue((prev) => {
+      const current = queueIndex >= 0 && queueIndex < prev.length ? prev[queueIndex] : null;
+      if (current) {
+        setQueueIndex(0);
+        return [current];
+      }
+      setQueueIndex(-1);
+      return [];
+    });
+    showToast('Cleared upcoming queue');
+  }, [queueIndex, showToast]);
+
+  const setEqEnabled = useCallback(
+    (enabled: boolean) => {
+      setEqSettings((prev) => ({ ...prev, enabled }));
+      showToast(enabled ? '5-Band Equalizer active' : 'Equalizer bypassed');
+    },
+    [showToast],
+  );
+
+  const setEqBandGain = useCallback((bandIndex: number, gainDb: number) => {
+    setEqSettings((prev) => {
+      const nextGains = [...prev.gains] as [number, number, number, number, number];
+      if (bandIndex >= 0 && bandIndex < 5) {
+        nextGains[bandIndex] = clampEqDb(gainDb);
+      }
+      return {
+        ...prev,
+        enabled: true,
+        presetId: 'custom',
+        gains: nextGains,
+      };
+    });
+  }, []);
+
+  const selectEqPreset = useCallback(
+    (presetId: Exclude<EqPresetId, 'custom'>) => {
+      const found = EQ_PRESETS.find((p) => p.id === presetId);
+      if (!found) return;
+      setEqSettings((prev) => ({
+        ...prev,
+        enabled: true,
+        presetId: found.id,
+        gains: [...found.gains] as [number, number, number, number, number],
+        preampDb: found.preampDb,
+      }));
+      showToast(`EQ Preset: ${found.name}`);
+    },
+    [showToast],
+  );
+
+  const setPreampDb = useCallback((db: number) => {
+    const clamped = Math.max(-6, Math.min(6, Math.round(db * 2) / 2));
+    setEqSettings((prev) => ({ ...prev, preampDb: clamped }));
+  }, []);
+
+  const setPlaybackRate = useCallback(
+    (rate: number) => {
+      const valid = rate === 0.85 || rate === 1.15 ? rate : 1;
+      setEqSettings((prev) => ({ ...prev, playbackRate: valid }));
+      showToast(`Playback speed: ${valid}x`);
+    },
+    [showToast],
+  );
+
+  const resetEq = useCallback(() => {
+    setEqSettings((prev) => ({
+      ...DEFAULT_EQ_SETTINGS,
+      playbackRate: prev.playbackRate,
+    }));
+    showToast('Equalizer reset to Flat');
+  }, [showToast]);
+
+  const toggleRemainingTime = useCallback(() => {
+    setShowRemainingTime((v) => !v);
+  }, []);
+
   const clearListeningHistory = useCallback(() => {
     setRecentTracks([]);
     try {
@@ -962,6 +1114,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       addListToQueue,
       playNextInQueue,
       removeFromQueue,
+      shuffleQueue,
+      clearQueue,
       togglePlayPause,
       nextTrack,
       prevTrack,
@@ -980,6 +1134,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       removeTrackFromPlaylist,
       restoreLibraryFromCloudData,
       clearListeningHistory,
+      eqSettings,
+      eqModalOpen,
+      setEqModalOpen,
+      setEqEnabled,
+      setEqBandGain,
+      selectEqPreset,
+      setPreampDb,
+      setPlaybackRate,
+      resetEq,
+      showRemainingTime,
+      toggleRemainingTime,
     }),
     [
       currentTrack,
@@ -1017,6 +1182,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       addListToQueue,
       playNextInQueue,
       removeFromQueue,
+      shuffleQueue,
+      clearQueue,
       togglePlayPause,
       nextTrack,
       prevTrack,
@@ -1035,6 +1202,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       removeTrackFromPlaylist,
       restoreLibraryFromCloudData,
       clearListeningHistory,
+      eqSettings,
+      eqModalOpen,
+      setEqEnabled,
+      setEqBandGain,
+      selectEqPreset,
+      setPreampDb,
+      setPlaybackRate,
+      resetEq,
+      showRemainingTime,
+      toggleRemainingTime,
     ],
   );
 

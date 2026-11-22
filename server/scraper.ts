@@ -12,6 +12,7 @@ import type {
   MusicVideoResult,
   QuickMix,
   RegionScope,
+  ReleaseRadarPayload,
   SearchPayload,
   StreamResolution,
   SyncedLyricLine,
@@ -2170,4 +2171,114 @@ export async function getMusicVideo(title: string, artist: string): Promise<Musi
     };
   });
 }
+
+export async function getReleaseRadar(artistNames: string[]): Promise<ReleaseRadarPayload> {
+  const cleanArtists = Array.from(
+    new Set(
+      artistNames
+        .map((a) => a.trim())
+        .filter((a) => a.length >= 2 && a.length <= 80),
+    ),
+  ).slice(0, 10);
+
+  if (cleanArtists.length === 0) {
+    return {
+      tracks: [],
+      releases: [],
+      artistsChecked: [],
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  const cacheKey = `release_radar:${cleanArtists.map((a) => a.toLowerCase()).sort().join('|')}`;
+  return withCache(cacheKey, 10 * 60 * 1000, async () => {
+    const songResults = await Promise.allSettled(
+      cleanArtists.map(async (artist) => {
+        const [idTracks, usTracks] = await Promise.allSettled([
+          fetchJson<ItunesSearchResult>(
+            `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&entity=song&country=id&limit=10`,
+            undefined,
+            5500,
+          ),
+          fetchJson<ItunesSearchResult>(
+            `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&entity=song&country=us&limit=8`,
+            undefined,
+            5500,
+          ),
+        ]);
+
+        const artistNorm = normalizeText(artist);
+        const rawItems = [
+          ...(idTracks.status === 'fulfilled' ? idTracks.value.results ?? [] : []),
+          ...(usTracks.status === 'fulfilled' ? usTracks.value.results ?? [] : []),
+        ];
+
+        return rawItems
+          .filter((r) => r.trackId && r.trackName && r.artistName)
+          .filter((r) => {
+            const candArtist = normalizeText(r.artistName || '');
+            return (
+              candArtist === artistNorm ||
+              candArtist.includes(artistNorm) ||
+              artistNorm.includes(candArtist)
+            );
+          })
+          .map((r) => ({
+            releaseTs: r.releaseDate ? Date.parse(r.releaseDate) || 0 : 0,
+            track: {
+              id: `itunes-${r.trackId}`,
+              title: r.trackName!,
+              artist: r.artistName!,
+              album: r.collectionName || 'Single',
+              durationSec: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : 0,
+              artwork: upscaleItunesArt(r.artworkUrl100),
+              region: inferRegion(r.artistName || artist, r.primaryGenreName || '', 'GLOBAL'),
+              genre: r.primaryGenreName || 'Music',
+              source: 'itunes' as const,
+              previewUrl: r.previewUrl,
+              releaseYear: r.releaseDate?.slice(0, 4),
+              explicit: r.trackExplicitness === 'explicit',
+              collectionId: r.collectionId,
+            } satisfies Track,
+          }));
+      }),
+    );
+
+    const datedEntries: Array<{ releaseTs: number; track: Track }> = [];
+    for (const res of songResults) {
+      if (res.status === 'fulfilled') {
+        datedEntries.push(...res.value);
+      }
+    }
+
+    datedEntries.sort((a, b) => b.releaseTs - a.releaseTs);
+
+    const uniqueTracks = deduplicateTracks(datedEntries.map((x) => x.track)).slice(0, 24);
+    const albumSeen = new Set<string>();
+    const releases: AlbumSummary[] = [];
+    for (const t of uniqueTracks) {
+      const key = `${normalizeText(t.album)}::${normalizeText(t.artist)}`;
+      if (!t.album || albumSeen.has(key) || !t.artwork) continue;
+      albumSeen.add(key);
+      releases.push({
+        id: `radar-alb-${encodeURIComponent(t.album)}-${encodeURIComponent(t.artist)}`,
+        title: t.album,
+        artist: t.artist,
+        artwork: t.artwork,
+        releaseYear: t.releaseYear,
+        releaseType: t.album.toLowerCase().includes('single') ? 'Single' : 'Album',
+        collectionId: t.collectionId,
+      });
+      if (releases.length >= 10) break;
+    }
+
+    return {
+      tracks: uniqueTracks,
+      releases,
+      artistsChecked: cleanArtists,
+      fetchedAt: new Date().toISOString(),
+    };
+  });
+}
+
 
