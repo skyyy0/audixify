@@ -19,9 +19,12 @@ import {
 } from './scraper.ts';
 import {
   antiBotApiGuard,
+  issueCaptchaChallenge,
   issueShieldChallenge,
   mediaProxyGuard,
+  securityHeadersMiddleware,
   signMediaTargetParams,
+  verifyCaptchaChallenge,
 } from './security.ts';
 
 function signProxyStreamUrl(streamUrl: string | null): string | null {
@@ -44,7 +47,10 @@ function signProxyStreamUrl(streamUrl: string | null): string | null {
 
 export function createApiApp(): express.Express {
   const app = express();
-  app.use(express.json());
+  app.set('trust proxy', 1);
+  app.disable('x-powered-by');
+  app.use(express.json({ limit: '64kb' }));
+  app.use(securityHeadersMiddleware);
 
   app.get('/robots.txt', (_req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -91,6 +97,8 @@ export function createApiApp(): express.Express {
   });
 
   app.get('/api/shield', issueShieldChallenge);
+  app.get('/api/captcha/challenge', issueCaptchaChallenge);
+  app.post('/api/captcha/verify', verifyCaptchaChallenge);
 
   app.get('/api/discover', antiBotApiGuard, async (req, res) => {
     try {
@@ -630,5 +638,70 @@ export function createApiApp(): express.Express {
     }
   });
 
+  const ARTWORK_EXTRA_HOST_SUFFIXES = ['ytimg.com', 'ggpht.com', 'googleusercontent.com'];
+  const isValidExternalArtworkUrl = (rawUrl: string): boolean => {
+    if (isValidExternalMediaUrl(rawUrl)) return true;
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol !== 'https:') return false;
+      const host = parsed.hostname.toLowerCase();
+      return ARTWORK_EXTRA_HOST_SUFFIXES.some(
+        (suffix) => host === suffix || host.endsWith(`.${suffix}`),
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  app.get('/api/artwork-proxy', mediaProxyGuard, async (req, res) => {
+    const targetUrl = String(req.query.url || '');
+    if (!targetUrl || !isValidExternalArtworkUrl(targetUrl)) {
+      res.status(400).send('Invalid artwork URL');
+      return;
+    }
+
+    try {
+      const upstream = await fetch(targetUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!isValidExternalArtworkUrl(upstream.url)) {
+        res.status(403).send('Redirect target not allowed');
+        return;
+      }
+
+      if (!upstream.ok) {
+        res.status(upstream.status).send('Artwork unavailable');
+        return;
+      }
+
+      const contentType = (upstream.headers.get('content-type') || '').toLowerCase();
+      if (!contentType.startsWith('image/')) {
+        res.status(415).send('Non-image upstream rejected');
+        return;
+      }
+
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      if (buf.byteLength === 0 || buf.byteLength > 6 * 1024 * 1024) {
+        res.status(413).send('Artwork size out of bounds');
+        return;
+      }
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      res.send(buf);
+    } catch {
+      if (!res.headersSent) {
+        res.status(502).send('Artwork proxy error');
+      }
+    }
+  });
+
   return app;
 }
+

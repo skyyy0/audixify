@@ -1,9 +1,7 @@
-import { LayoutGroup, motion } from 'motion/react';
 import { useState } from 'react';
-import { BarChart3, Compass, Flame, Heart, Library, ListMusic, Plus, Search, User } from 'lucide-react';
+import { BarChart3, Compass, Flame, Heart, Keyboard, Library, ListMusic, Plus, Search, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
-import { IOS_SPRING_SNAPPY } from '../utils/motion';
 import { BrandMark } from './BrandMark';
 import { DeveloperBadge, GreenVerifiedBadge } from './VerifiedBadge';
 
@@ -13,9 +11,10 @@ interface SidebarProps {
   activeView: NavDestination;
   activePlaylistId: string | null;
   onNavigate: (view: NavDestination, playlistId?: string) => void;
+  onOpenShortcuts?: () => void;
 }
 
-export function Sidebar({ activeView, activePlaylistId, onNavigate }: SidebarProps) {
+export function Sidebar({ activeView, activePlaylistId, onNavigate, onOpenShortcuts }: SidebarProps) {
   const { likedTracks, playlists, createPlaylist } = usePlayer();
   const { profile, user, isDeveloper, showGreenCheckmark } = useAuth();
   const [creating, setCreating] = useState(false);
@@ -50,72 +49,64 @@ export function Sidebar({ activeView, activePlaylistId, onNavigate }: SidebarPro
         </div>
 
         {/* Primary Nav */}
-        <LayoutGroup id="sidebar-nav-group">
-          <nav className="px-3 py-3 space-y-1 shrink-0" aria-label="Primary navigation">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active =
-                activeView === item.id || (item.id === 'library' && activeView === 'playlist');
-              return (
-                <motion.button
-                  key={item.id}
-                  type="button"
-                  whileTap={{ scale: 0.97 }}
-                  transition={IOS_SPRING_SNAPPY}
-                  onClick={() => onNavigate(item.id)}
-                  className={`relative w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-sm font-medium transition-colors whitespace-nowrap ${
-                    active
-                      ? 'text-zinc-950 dark:text-white'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-100'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="sidebar-active-pill"
-                      transition={IOS_SPRING_SNAPPY}
-                      className="absolute inset-0 rounded-2xl bg-white/85 dark:bg-white/[0.12] border border-white/70 dark:border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_4px_12px_rgba(0,0,0,0.06)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_4px_14px_rgba(0,0,0,0.28)]"
-                    />
-                  )}
-                  {item.id === 'profile' && (profile?.avatarDataUrl || user?.photoURL) ? (
-                    <img
-                      src={profile?.avatarDataUrl || user?.photoURL || ''}
-                      alt={profile?.displayName || 'Profile'}
-                      className="relative z-10 w-4 h-4 rounded-full object-cover shrink-0"
-                    />
-                  ) : (
-                    <Icon className={`relative z-10 w-4 h-4 shrink-0 transition-colors ${active ? 'text-[#FF4D2E]' : ''}`} />
-                  )}
-                  <span className="relative z-10 flex-1 text-left truncate">{item.label}</span>
-                  {item.id === 'profile' && (
-                    <span className="relative z-10 flex items-center gap-1">
-                      {(profile?.streakCount ?? 0) >= 1 && (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[#FF4D2E]/15 text-[#FF4D2E] text-[10px] font-mono font-bold">
-                          <Flame className="w-2.5 h-2.5" />
-                          <span>{profile?.streakCount}</span>
-                        </span>
-                      )}
-                      {isDeveloper && <DeveloperBadge />}
-                      {showGreenCheckmark && <GreenVerifiedBadge />}
-                    </span>
-                  )}
-                </motion.button>
-              );
-            })}
-          </nav>
-        </LayoutGroup>
+        <nav className="px-3 py-3 space-y-1 shrink-0" aria-label="Primary navigation">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active =
+              activeView === item.id || (item.id === 'library' && activeView === 'playlist');
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onNavigate(item.id)}
+                className={`relative w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-sm font-medium active:scale-[0.97] transition-[background-color,color,transform] duration-150 whitespace-nowrap ${
+                  active
+                    ? 'bg-white/85 dark:bg-white/[0.12] text-zinc-950 dark:text-white border border-white/70 dark:border-white/[0.12] shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-100 hover:bg-white/40 dark:hover:bg-white/[0.04]'
+                }`}
+              >
+                {item.id === 'profile' && (profile?.avatarDataUrl || user?.photoURL) ? (
+                  <img
+                    src={profile?.avatarDataUrl || user?.photoURL || ''}
+                    alt={profile?.displayName || 'Profile'}
+                    className="w-4 h-4 rounded-full object-cover shrink-0"
+                  />
+                ) : (
+                  <Icon
+                    className={`w-4 h-4 shrink-0 transition-transform duration-150 ${
+                      active ? 'text-[#FF4D2E] scale-110' : ''
+                    }`}
+                  />
+                )}
+                <span className="flex-1 text-left truncate">{item.label}</span>
+                {item.id === 'profile' && (
+                  <span className="flex items-center gap-1">
+                    {(profile?.streakCount ?? 0) >= 1 && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[#FF4D2E]/15 text-[#FF4D2E] text-[10px] font-mono font-bold">
+                        <Flame className="w-2.5 h-2.5" />
+                        <span>{profile?.streakCount}</span>
+                      </span>
+                    )}
+                    {isDeveloper && <DeveloperBadge />}
+                    {showGreenCheckmark && <GreenVerifiedBadge />}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
 
         {/* Playlists & Liked */}
         <div className="px-4 pt-3 pb-2 shrink-0 flex items-center justify-between border-t border-black/[0.06] dark:border-white/[0.07]">
           <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Playlists</span>
-          <motion.button
+          <button
             type="button"
-            whileTap={{ scale: 0.9 }}
             onClick={() => setCreating((v) => !v)}
             aria-label="Create new playlist"
-            className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] active:scale-90 transition-transform"
           >
             <Plus className="w-4 h-4" />
-          </motion.button>
+          </button>
         </div>
 
         {creating && (
@@ -177,10 +168,23 @@ export function Sidebar({ activeView, activePlaylistId, onNavigate }: SidebarPro
           })}
         </div>
 
-        {/* Developer Credit */}
+        {/* Developer Credit & Shortcuts */}
         <div className="px-5 py-3 border-t border-black/[0.06] dark:border-white/[0.07] text-[11px] text-zinc-500 dark:text-zinc-400 flex items-center justify-between">
-          <span>Audixify</span>
-          <span>Built by sky</span>
+          <span>Audixify · sky</span>
+          {onOpenShortcuts ? (
+            <button
+              type="button"
+              onClick={onOpenShortcuts}
+              title="Keyboard Shortcuts (?)"
+              aria-label="Keyboard Shortcuts"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full ios-glass-pill text-[10px] font-mono text-zinc-600 dark:text-zinc-300 hover:text-[#FF4D2E] transition-colors"
+            >
+              <Keyboard className="w-3 h-3" />
+              <span>?</span>
+            </button>
+          ) : (
+            <span>Built by sky</span>
+          )}
         </div>
       </div>
     </aside>

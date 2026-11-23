@@ -28,6 +28,11 @@ import {
   type EqualizerSettings,
 } from '../utils/audioEqualizer';
 import { useAuth } from './AuthContext';
+import {
+  clearListeningStats,
+  recordListeningSeconds,
+  recordTrackPlay,
+} from '../utils/listeningStats';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 export type ThemeMode = 'dark' | 'light';
@@ -110,6 +115,13 @@ interface PlayerContextValue {
   resetEq: () => void;
   showRemainingTime: boolean;
   toggleRemainingTime: () => void;
+  fadeSeconds: 0 | 2 | 4;
+  setFadeSeconds: (sec: 0 | 2 | 4) => void;
+  statsVersion: number;
+  getSpectrumBins: (target: Uint8Array<ArrayBuffer>) => boolean;
+  startArtistRadio: (track: Track) => Promise<void>;
+  trackInfoTarget: Track | null;
+  setTrackInfoTarget: (track: Track | null) => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -210,6 +222,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [eqModalOpen, setEqModalOpen] = useState(false);
   const [showRemainingTime, setShowRemainingTime] = useState(false);
 
+  const [fadeSeconds, setFadeSecondsState] = useState<0 | 2 | 4>(() => {
+    try {
+      const saved = Number(localStorage.getItem('audixify_fade_sec_v1'));
+      return saved === 2 || saved === 4 ? saved : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const fadeSecondsRef = useRef<0 | 2 | 4>(fadeSeconds);
+  fadeSecondsRef.current = fadeSeconds;
+  const fadeRafRef = useRef<number | null>(null);
+
+  const [statsVersion, setStatsVersion] = useState(0);
+  const [trackInfoTarget, setTrackInfoTarget] = useState<Track | null>(null);
+  const lastAudioTimeRef = useRef(0);
+  const recordedPlaySeqRef = useRef(0);
+  const lastStatsBumpRef = useRef(0);
+
   useEffect(() => {
     currentTrackRef.current = currentTrack;
   }, [currentTrack]);
@@ -301,9 +331,52 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (toastTimerRef.current !== null) {
         window.clearTimeout(toastTimerRef.current);
       }
+      if (fadeRafRef.current !== null) {
+        window.cancelAnimationFrame(fadeRafRef.current);
+      }
       eqEngineRef.current?.dispose();
     };
   }, []);
+
+  const cancelVolumeFade = useCallback(() => {
+    if (fadeRafRef.current !== null) {
+      window.cancelAnimationFrame(fadeRafRef.current);
+      fadeRafRef.current = null;
+    }
+  }, []);
+
+  const runVolumeFadeIn = useCallback(
+    (audio: HTMLAudioElement, seconds: number) => {
+      cancelVolumeFade();
+      if (mutedRef.current || seconds <= 0) {
+        audio.volume = mutedRef.current ? 0 : volumeRef.current;
+        return;
+      }
+      const target = volumeRef.current;
+      const durationMs = seconds * 1000;
+      const start = performance.now();
+      audio.volume = Math.min(target, 0.04);
+
+      const step = (now: number) => {
+        if (!audioRef.current || mutedRef.current) {
+          fadeRafRef.current = null;
+          return;
+        }
+        const progress = Math.min(1, (now - start) / durationMs);
+        // Smooth ease-out curve for natural listening entry
+        const eased = 1 - Math.pow(1 - progress, 2);
+        audio.volume = Math.min(volumeRef.current, Math.max(0.02, volumeRef.current * eased));
+        if (progress < 1) {
+          fadeRafRef.current = window.requestAnimationFrame(step);
+        } else {
+          audio.volume = volumeRef.current;
+          fadeRafRef.current = null;
+        }
+      };
+      fadeRafRef.current = window.requestAnimationFrame(step);
+    },
+    [cancelVolumeFade],
+  );
 
   // Sleep Timer countdown handler
   useEffect(() => {
@@ -391,11 +464,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const audio = audioRef.current;
       const seq = ++requestSeqRef.current;
       destroyHls();
+      cancelVolumeFade();
+      lastAudioTimeRef.current = 0;
 
       if (audio) {
         audio.pause();
         audio.muted = mutedRef.current;
-        audio.volume = mutedRef.current ? 0 : volumeRef.current;
+        audio.volume = mutedRef.current ? 0 : fadeSecondsRef.current > 0 ? 0.04 : volumeRef.current;
       }
 
       setCurrentTrack(track);
@@ -675,8 +750,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     const onPlay = () => {
       audio.muted = mutedRef.current;
-      audio.volume = mutedRef.current ? 0 : volumeRef.current;
       audio.playbackRate = eqSettingsRef.current.playbackRate;
+      if (fadeSecondsRef.current > 0 && audio.currentTime < 1.5) {
+        runVolumeFadeIn(audio, fadeSecondsRef.current);
+      } else {
+        audio.volume = mutedRef.current ? 0 : volumeRef.current;
+      }
       if (eqSettingsRef.current.enabled) {
         if (!eqEngineRef.current) eqEngineRef.current = new WebAudioEqualizerEngine();
         if (eqEngineRef.current.ensureInitialized(audio)) {
@@ -685,22 +764,47 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       } else {
         eqEngineRef.current?.resume();
       }
+      const activeTrack = currentTrackRef.current;
+      if (activeTrack && recordedPlaySeqRef.current !== requestSeqRef.current) {
+        recordedPlaySeqRef.current = requestSeqRef.current;
+        recordTrackPlay(activeTrack);
+        setStatsVersion((v) => v + 1);
+      }
       setIsPlaying(true);
       setIsBuffering(false);
       setStreamError(null);
     };
-    const onPause = () => setIsPlaying(false);
+    const onPause = () => {
+      cancelVolumeFade();
+      setIsPlaying(false);
+    };
     const onWaiting = () => setIsBuffering(true);
     const onCanPlay = () => setIsBuffering(false);
     const onPlaying = () => {
       audio.muted = mutedRef.current;
-      audio.volume = mutedRef.current ? 0 : volumeRef.current;
+      if (fadeRafRef.current === null) {
+        audio.volume = mutedRef.current ? 0 : volumeRef.current;
+      }
       audio.playbackRate = eqSettingsRef.current.playbackRate;
       setIsBuffering(false);
       setIsPlaying(true);
       setStreamError(null);
     };
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime || 0);
+    const onTimeUpdate = () => {
+      const t = audio.currentTime || 0;
+      setCurrentTime(t);
+      const delta = t - lastAudioTimeRef.current;
+      lastAudioTimeRef.current = t;
+      const activeTrack = currentTrackRef.current;
+      if (activeTrack && !audio.paused && delta > 0 && delta <= 2.5) {
+        recordListeningSeconds(activeTrack, delta);
+        const now = Date.now();
+        if (now - lastStatsBumpRef.current >= 10000) {
+          lastStatsBumpRef.current = now;
+          setStatsVersion((v) => v + 1);
+        }
+      }
+    };
     const onDurationChange = () => {
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         setDuration(audio.duration);
@@ -1063,12 +1167,77 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setShowRemainingTime((v) => !v);
   }, []);
 
+  const setFadeSeconds = useCallback(
+    (sec: 0 | 2 | 4) => {
+      const normalized: 0 | 2 | 4 = sec === 2 || sec === 4 ? sec : 0;
+      setFadeSecondsState(normalized);
+      try {
+        localStorage.setItem('audixify_fade_sec_v1', String(normalized));
+      } catch {}
+      showToast(normalized === 0 ? 'Smooth audio fade disabled' : `Smooth audio fade: ${normalized}s`);
+    },
+    [showToast],
+  );
+
+  const getSpectrumBins = useCallback((target: Uint8Array<ArrayBuffer>): boolean => {
+    if (!eqEngineRef.current) return false;
+    return eqEngineRef.current.getFrequencyData(target);
+  }, []);
+
+  const startArtistRadio = useCallback(
+    async (seedTrack: Track) => {
+      const mainArtist =
+        seedTrack.artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || seedTrack.artist;
+      showToast(`Starting ${mainArtist} Radio...`);
+      try {
+        const [artistRes, searchRes] = await Promise.allSettled([
+          apiFetch(`/api/artist?name=${encodeURIComponent(mainArtist)}`),
+          apiFetch(`/api/search?q=${encodeURIComponent(mainArtist)}`),
+        ]);
+
+        const candidates: Track[] = [seedTrack];
+        const seen = new Set<string>([`${seedTrack.title.toLowerCase()}::${seedTrack.artist.toLowerCase()}`]);
+
+        const pushUnique = (list: Track[] | undefined) => {
+          if (!Array.isArray(list)) return;
+          for (const item of list) {
+            const key = `${item.title.trim().toLowerCase()}::${item.artist.trim().toLowerCase()}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              candidates.push(item);
+            }
+          }
+        };
+
+        if (artistRes.status === 'fulfilled' && artistRes.value.ok) {
+          const detail = await artistRes.value.json();
+          pushUnique(detail?.topTracks);
+        }
+        if (searchRes.status === 'fulfilled' && searchRes.value.ok) {
+          const searchData = await searchRes.value.json();
+          pushUnique(searchData?.tracks);
+        }
+
+        const radioQueue = candidates.slice(0, 25);
+        setQueue(radioQueue);
+        setQueueIndex(0);
+        void loadAndPlayTrack(radioQueue[0], false);
+        showToast(`${mainArtist} Radio · ${radioQueue.length} tracks queued`);
+      } catch {
+        playTrack(seedTrack);
+      }
+    },
+    [loadAndPlayTrack, playTrack, showToast],
+  );
+
   const clearListeningHistory = useCallback(() => {
     setRecentTracks([]);
+    clearListeningStats();
+    setStatsVersion((v) => v + 1);
     try {
       localStorage.removeItem('audixify_recent_tracks');
     } catch {}
-    showToast('Listening history cleared');
+    showToast('Listening history & stats cleared');
   }, [showToast]);
 
   const progressValue = useMemo(
@@ -1145,6 +1314,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       resetEq,
       showRemainingTime,
       toggleRemainingTime,
+      fadeSeconds,
+      setFadeSeconds,
+      statsVersion,
+      getSpectrumBins,
+      startArtistRadio,
+      trackInfoTarget,
+      setTrackInfoTarget,
     }),
     [
       currentTrack,
@@ -1212,6 +1388,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       resetEq,
       showRemainingTime,
       toggleRemainingTime,
+      fadeSeconds,
+      setFadeSeconds,
+      statsVersion,
+      getSpectrumBins,
+      startArtistRadio,
+      trackInfoTarget,
     ],
   );
 

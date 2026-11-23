@@ -1,4 +1,4 @@
-import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   BarChart3,
   Compass,
@@ -154,6 +154,12 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
                   rounded="rounded-xl"
                   thumb
                 />
+                {isPlaying && !isBuffering && (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute -inset-1 rounded-full border border-dashed border-[#FF4D2E]/35 audixify-disc-active"
+                  />
+                )}
                 <span className="hidden md:flex absolute inset-0 bg-black/45 items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                   <Maximize2 className="w-4 h-4 text-white" />
                 </span>
@@ -395,39 +401,52 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
         )}
       </AnimatePresence>
 
-      {/* Mobile Floating Liquid Glass Bottom Tab Capsule */}
-      <LayoutGroup id="mobile-tab-group">
-        <nav
-          className="md:hidden grid grid-cols-5 h-[52px] rounded-[20px] ios-glass p-1 gap-0.5"
-          aria-label="Mobile navigation"
-        >
-          {mobileTabs.map((tab) => {
-            const Icon = tab.icon;
-            const active =
-              activeView === tab.id || (tab.id === 'library' && activeView === 'playlist');
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => onNavigate(tab.id)}
-                className={`relative min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-2xl px-0.5 text-[10px] font-medium transition-colors ${
-                  active ? 'text-[#FF4D2E]' : 'text-zinc-500 dark:text-zinc-400'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="mobile-tab-pill"
-                    transition={IOS_SPRING_SNAPPY}
-                    className="absolute inset-0 rounded-2xl bg-white/80 dark:bg-white/[0.12] shadow-xs"
+      {/* Mobile Floating Liquid Glass Bottom Tab Capsule with GPU translate3d slider */}
+      {(() => {
+        const activeIdx = Math.max(
+          0,
+          mobileTabs.findIndex(
+            (t) => activeView === t.id || (t.id === 'library' && activeView === 'playlist'),
+          ),
+        );
+        return (
+          <nav
+            className="md:hidden relative grid grid-cols-5 h-[52px] rounded-[20px] ios-glass p-1 gap-0.5"
+            aria-label="Mobile navigation"
+          >
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-1 left-1 w-[calc((100%-0.5rem)/5)] p-0.5 transition-transform duration-300 ease-[cubic-bezier(0.25,1.18,0.38,1)] will-change-transform"
+              style={{ transform: `translate3d(${activeIdx * 100}%, 0, 0)` }}
+            >
+              <div className="w-full h-full rounded-[15px] bg-white/90 dark:bg-white/[0.15] shadow-xs" />
+            </div>
+
+            {mobileTabs.map((tab) => {
+              const Icon = tab.icon;
+              const active =
+                activeView === tab.id || (tab.id === 'library' && activeView === 'playlist');
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => onNavigate(tab.id)}
+                  className={`relative z-10 min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-2xl px-0.5 text-[10px] font-medium active:scale-[0.88] transition-[transform,color] duration-200 ease-[cubic-bezier(0.22,1.15,0.36,1)] ${
+                    active ? 'text-[#FF4D2E]' : 'text-zinc-500 dark:text-zinc-400'
+                  }`}
+                >
+                  <Icon
+                    className={`w-4 h-4 shrink-0 transition-transform duration-300 ease-[cubic-bezier(0.25,1.26,0.38,1)] ${
+                      active ? 'scale-110 -translate-y-[1px]' : 'scale-100'
+                    }`}
                   />
-                )}
-                <Icon className="relative z-10 w-4 h-4 shrink-0" />
-                <span className="relative z-10 truncate max-w-full leading-none">{tab.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </LayoutGroup>
+                  <span className="truncate max-w-full leading-none">{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        );
+      })()}
     </div>
   );
 }

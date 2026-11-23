@@ -9,16 +9,24 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { LibraryView } from './components/LibraryView';
 import { PlayerBar } from './components/PlayerBar';
 import { PWAPromptModal } from './components/PWAPromptModal';
+import { SafeModeModal } from './components/SafeModeModal';
 import { SearchView } from './components/SearchView';
+import { ShortcutsModal } from './components/ShortcutsModal';
 import { Sidebar, type NavDestination } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
+import { TrackInfoModal } from './components/TrackInfoModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PlayerProvider, usePlayer } from './context/PlayerContext';
 import { SharedPlaylistsProvider } from './context/SharedPlaylistsContext';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import type { DiscoverPayload, RegionScope, SearchPayload } from './types/music';
-import { apiFetch } from './utils/apiFetch';
-import { IOS_SPRING, IOS_SPRING_SNAPPY } from './utils/motion';
+import {
+  apiFetch,
+  checkReloadSpamOnBoot,
+  subscribeSafeMode,
+  type SafeModeState,
+} from './utils/apiFetch';
+import { IOS_SPRING_SNAPPY } from './utils/motion';
 
 const NowPlayingDrawer = lazy(() =>
   import('./components/NowPlayingDrawer').then((m) => ({ default: m.NowPlayingDrawer })),
@@ -30,6 +38,10 @@ const ProfileView = lazy(() =>
 
 const SupportPage = lazy(() =>
   import('./components/SupportPage').then((m) => ({ default: m.SupportPage })),
+);
+
+const MusicCollageModal = lazy(() =>
+  import('./components/MusicCollageModal').then((m) => ({ default: m.MusicCollageModal })),
 );
 
 function AudixifyShell() {
@@ -53,9 +65,18 @@ function AudixifyShell() {
   const [regionScope, setRegionScope] = useState<RegionScope>(() => preferences.defaultRegion || 'all');
   const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [collageModalOpen, setCollageModalOpen] = useState(false);
+  const [safeMode, setSafeMode] = useState<SafeModeState>({ active: false, reason: '' });
 
   const mainScrollRef = useRef<HTMLElement | null>(null);
   const currentTimeRef = useRef(0);
+
+  useEffect(() => {
+    const unsub = subscribeSafeMode(setSafeMode);
+    checkReloadSpamOnBoot();
+    return unsub;
+  }, []);
 
   // Read ?join=CODE invite links cleanly on load
   useEffect(() => {
@@ -187,9 +208,12 @@ function AudixifyShell() {
       } else if (e.key.toLowerCase() === 'm' && currentTrack) {
         e.preventDefault();
         toggleMute();
-      } else if (e.key.toLowerCase() === 'e' && currentTrack) {
+      } else if (e.key.toLowerCase() === 'e') {
         e.preventDefault();
         setEqModalOpen(true);
+      } else if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setShortcutsOpen((o) => !o);
       } else if (e.key === 'ArrowRight' && currentTrack) {
         const audio = document.querySelector('audio');
         if (audio) {
@@ -217,7 +241,9 @@ function AudixifyShell() {
     } else if (view !== 'playlist') {
       setActivePlaylistId(null);
     }
-    mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTop = 0;
+    }
   };
 
   const handleRegionChange = (scope: RegionScope) => {
@@ -249,7 +275,9 @@ function AudixifyShell() {
       previousView: activeView === 'artist' || activeView === 'album' ? 'discover' : activeView,
     });
     setActiveView('artist');
-    mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTop = 0;
+    }
   };
 
   const handleAlbumClick = (title: string, artist: string) => {
@@ -260,7 +288,9 @@ function AudixifyShell() {
       previousView: activeView === 'artist' || activeView === 'album' ? 'discover' : activeView,
     });
     setActiveView('album');
-    mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTop = 0;
+    }
   };
 
   const viewKey =
@@ -393,6 +423,7 @@ function AudixifyShell() {
               activeView={activeView}
               activePlaylistId={activePlaylistId}
               onNavigate={handleNavigate}
+              onOpenShortcuts={() => setShortcutsOpen(true)}
             />
 
             <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative">
@@ -413,86 +444,93 @@ function AudixifyShell() {
                   if (top > 480 && !showScrollTop) setShowScrollTop(true);
                   else if (top <= 480 && showScrollTop) setShowScrollTop(false);
                 }}
-                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 py-2.5 sm:px-4 sm:py-3 md:px-6 md:py-4 scroll-smooth"
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 py-2.5 sm:px-4 sm:py-3 md:px-6 md:py-4"
               >
                 <div className="max-w-7xl mx-auto">
-                  <motion.div
-                    key={viewKey}
-                    initial={{ opacity: 0, y: 10, scale: 0.994 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={IOS_SPRING}
+                  {/* Keep DiscoverView mounted across tabs so switching back to Home takes <10ms */}
+                  <div
+                    className={activeView === 'discover' ? 'audixify-view-enter' : 'hidden'}
+                    aria-hidden={activeView !== 'discover'}
                   >
-                    {(activeView === 'artist' || activeView === 'album') && detailTarget ? (
-                      <ArtistAlbumView
-                        mode={detailTarget.mode}
-                        artistName={detailTarget.artistName}
-                        albumTitle={detailTarget.albumTitle}
-                        onBack={() => handleNavigate(detailTarget.previousView)}
-                        onArtistClick={handleArtistClick}
-                        onAlbumClick={handleAlbumClick}
-                      />
-                    ) : activeView === 'charts' ? (
-                      <ChartsView
-                        data={discoverData}
-                        loading={discoverLoading}
-                        onArtistClick={handleArtistClick}
-                        onAlbumClick={handleAlbumClick}
-                      />
-                    ) : activeView === 'search' ? (
-                      <SearchView
-                        query={searchQuery}
-                        results={searchResults}
-                        loading={searchLoading}
-                        error={searchError}
-                        onQuickQuery={(q) => handleSearchSubmit(q)}
-                        onArtistClick={handleArtistClick}
-                        onAlbumClick={handleAlbumClick}
-                      />
-                    ) : activeView === 'profile' ? (
-                      <Suspense
-                        fallback={
-                          <div className="rounded-[28px] ios-glass p-8 text-center text-xs text-zinc-500">
-                            Loading profile &amp; settings...
-                          </div>
-                        }
-                      >
-                        <ProfileView
-                          onApplyDefaultRegion={(reg) => setRegionScope(reg)}
-                          onOpenSupportPage={openSupportPage}
-                          pwaState={{
-                            isStandalone: pwa.isStandalone,
-                            snoozeRemainingHours: pwa.snoozeRemainingHours,
-                            onOpenInstallPrompt: pwa.openInstallPrompt,
-                          }}
+                    <DiscoverView
+                      data={discoverData}
+                      loading={discoverLoading}
+                      error={discoverError}
+                      regionScope={regionScope}
+                      onRegionChange={handleRegionChange}
+                      onRetry={() => loadDiscover(regionScope)}
+                      onOpenCharts={() => handleNavigate('charts')}
+                      onArtistClick={handleArtistClick}
+                      onAlbumClick={handleAlbumClick}
+                      onOpenCollageStudio={() => setCollageModalOpen(true)}
+                    />
+                  </div>
+
+                  {activeView !== 'discover' && (
+                    <div key={viewKey} className="audixify-view-enter">
+                      {(activeView === 'artist' || activeView === 'album') && detailTarget ? (
+                        <ArtistAlbumView
+                          mode={detailTarget.mode}
+                          artistName={detailTarget.artistName}
+                          albumTitle={detailTarget.albumTitle}
+                          onBack={() => handleNavigate(detailTarget.previousView)}
+                          onArtistClick={handleArtistClick}
+                          onAlbumClick={handleAlbumClick}
                         />
-                      </Suspense>
-                    ) : activeView === 'library' || activeView === 'playlist' ? (
-                      <LibraryView
-                        activePlaylistId={activePlaylistId}
-                        onSelectPlaylist={(id) => {
-                          setActivePlaylistId(id);
-                          setActiveView(id ? 'playlist' : 'library');
-                        }}
-                        onArtistClick={handleArtistClick}
-                        onAlbumClick={handleAlbumClick}
-                        onExploreClick={() => handleNavigate('discover')}
-                        initialJoinCode={pendingJoinCode}
-                        onClearJoinCode={() => setPendingJoinCode(null)}
-                      />
-                    ) : (
-                      <DiscoverView
-                        data={discoverData}
-                        loading={discoverLoading}
-                        error={discoverError}
-                        regionScope={regionScope}
-                        onRegionChange={handleRegionChange}
-                        onRetry={() => loadDiscover(regionScope)}
-                        onOpenCharts={() => handleNavigate('charts')}
-                        onArtistClick={handleArtistClick}
-                        onAlbumClick={handleAlbumClick}
-                      />
-                    )}
-                  </motion.div>
+                      ) : activeView === 'charts' ? (
+                        <ChartsView
+                          data={discoverData}
+                          loading={discoverLoading}
+                          onArtistClick={handleArtistClick}
+                          onAlbumClick={handleAlbumClick}
+                        />
+                      ) : activeView === 'search' ? (
+                        <SearchView
+                          query={searchQuery}
+                          results={searchResults}
+                          loading={searchLoading}
+                          error={searchError}
+                          onQuickQuery={(q) => handleSearchSubmit(q)}
+                          onArtistClick={handleArtistClick}
+                          onAlbumClick={handleAlbumClick}
+                        />
+                      ) : activeView === 'profile' ? (
+                        <Suspense
+                          fallback={
+                            <div className="rounded-[28px] ios-glass-surface p-8 text-center text-xs text-zinc-500">
+                              Loading profile &amp; settings...
+                            </div>
+                          }
+                        >
+                          <ProfileView
+                            onApplyDefaultRegion={(reg) => setRegionScope(reg)}
+                            onOpenSupportPage={openSupportPage}
+                            onOpenShortcuts={() => setShortcutsOpen(true)}
+                            onOpenCollageStudio={() => setCollageModalOpen(true)}
+                            pwaState={{
+                              isStandalone: pwa.isStandalone,
+                              snoozeRemainingHours: pwa.snoozeRemainingHours,
+                              onOpenInstallPrompt: pwa.openInstallPrompt,
+                            }}
+                          />
+                        </Suspense>
+                      ) : (
+                        <LibraryView
+                          activePlaylistId={activePlaylistId}
+                          onSelectPlaylist={(id) => {
+                            setActivePlaylistId(id);
+                            setActiveView(id ? 'playlist' : 'library');
+                          }}
+                          onArtistClick={handleArtistClick}
+                          onAlbumClick={handleAlbumClick}
+                          onExploreClick={() => handleNavigate('discover')}
+                          onOpenCollageStudio={() => setCollageModalOpen(true)}
+                          initialJoinCode={pendingJoinCode}
+                          onClearJoinCode={() => setPendingJoinCode(null)}
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               </main>
 
@@ -534,6 +572,27 @@ function AudixifyShell() {
       {/* 5-Band Equalizer Modal */}
       <EqualizerModal />
 
+      {/* Track Info & Credits Sheet */}
+      <TrackInfoModal
+        onArtistClick={handleArtistClick}
+        onAlbumClick={handleAlbumClick}
+      />
+
+      {/* Keyboard Shortcuts Guide */}
+      <ShortcutsModal
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+      />
+
+      {/* Music Story Collage Studio (3 Songs + Gallery Photo) */}
+      <Suspense fallback={null}>
+        <MusicCollageModal
+          open={collageModalOpen}
+          onClose={() => setCollageModalOpen(false)}
+          discoverData={discoverData}
+        />
+      </Suspense>
+
       {/* Smart 48-Hour Snoozeable PWA Install Popup */}
       <PWAPromptModal
         open={pwa.showPrompt}
@@ -542,6 +601,9 @@ function AudixifyShell() {
         onInstall={pwa.triggerInstall}
         onDismiss48Hours={pwa.dismissFor48Hours}
       />
+
+      {/* Anti-DDoS / Spam-Reload Safe Mode Human Verification Gate */}
+      <SafeModeModal open={safeMode.active} reason={safeMode.reason} />
     </div>
   );
 }

@@ -113,10 +113,12 @@ export function AboutSkyPage({ onBackToSettings }: AboutSkyPageProps) {
         </div>
 
         <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
-          Hi, I&rsquo;m <strong>sky</strong> &mdash; the developer behind <strong>Audixify</strong>.
-          I built Audixify with a focus on lightweight performance across 2GB&ndash;16GB RAM phones,
-          fluid iOS Liquid Glass interaction physics, live-scraped global, Asian, and Indonesian
-          catalogs, real artist listener telemetry, synchronized lyrics, and native audio/MV playback.
+          Hi, I&rsquo;m <strong>sky</strong> &mdash; the creator and lead engineer behind{' '}
+          <strong>Audixify</strong>. Designed with a focus on effortless speed, refined iOS Liquid
+          Glass motion, and high-fidelity playback, Audixify brings together live global, Asian, and
+          Indonesian music catalogs, synchronized lyrics, a 5-band audio equalizer, collaborative
+          playlists, shareable music story cards, and seamless audio &amp; MV streaming in one
+          cohesive experience.
         </p>
       </section>
 

@@ -1,20 +1,23 @@
-import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   Film,
   Headphones,
   Heart,
+  Info,
   ListMusic,
   ListPlus,
   Mic2,
   Moon,
   Pause,
   Play,
+  Radio,
   Repeat,
   Repeat1,
   RotateCcw,
   RotateCw,
+  Search,
   Share2,
   Shuffle,
   SkipBack,
@@ -22,14 +25,17 @@ import {
   Sliders,
   Sparkles,
   Trash2,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer, usePlayerProgress } from '../context/PlayerContext';
 import type { LyricsPayload } from '../types/music';
 import { apiFetch } from '../utils/apiFetch';
 import { formatDuration } from '../utils/format';
+import { getCachedLyrics, setCachedLyrics } from '../utils/lyricsCache';
 import { IOS_SPRING, IOS_SPRING_SHEET, IOS_SPRING_SNAPPY } from '../utils/motion';
 import { Artwork } from './Artwork';
+import { LiveSpectrumBars } from './LiveSpectrumBars';
 import { NativeMvPlayer, type NativeMvPlayerHandle } from './NativeMvPlayer';
 import { ShareLyricsModal } from './ShareLyricsModal';
 
@@ -75,6 +81,8 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
     setEqModalOpen,
     showRemainingTime,
     toggleRemainingTime,
+    startArtistRadio,
+    setTrackInfoTarget,
   } = usePlayer();
   const { currentTime, duration } = usePlayerProgress();
   const { preferences } = useAuth();
@@ -94,6 +102,9 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
   const [tab, setTab] = useState<'lyrics' | 'queue'>('lyrics');
   const [lyrics, setLyrics] = useState<LyricsPayload | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
+  const [lyricsFromCache, setLyricsFromCache] = useState(false);
+  const [lyricSearchOpen, setLyricSearchOpen] = useState(false);
+  const [lyricQuery, setLyricQuery] = useState('');
   const [videoTime, setVideoTime] = useState(0);
   const [manualScrollPaused, setManualScrollPaused] = useState(false);
   const [sleepMenuOpen, setSleepMenuOpen] = useState(false);
@@ -140,8 +151,19 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
   }, [sleepMenuOpen]);
 
   useEffect(() => {
+    setLyricSearchOpen(false);
+    setLyricQuery('');
     if (!currentTrack || !nowPlayingOpen) return;
 
+    const cached = getCachedLyrics(currentTrack.title, currentTrack.artist);
+    if (cached) {
+      setLyrics(cached);
+      setLyricsFromCache(true);
+      setLyricsLoading(false);
+      return;
+    }
+
+    setLyricsFromCache(false);
     const controller = new AbortController();
     setLyricsLoading(true);
     setLyrics(null);
@@ -158,13 +180,17 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
         return (await res.json()) as LyricsPayload;
       })
       .then((data) => {
-        setLyrics({
+        const normalized: LyricsPayload = {
           found: Boolean(data?.found),
           synced: Boolean(data?.synced),
           lines: Array.isArray(data?.lines) ? data.lines : [],
           plainText: typeof data?.plainText === 'string' ? data.plainText : '',
           sourceName: data?.sourceName,
-        });
+        };
+        if (normalized.found) {
+          setCachedLyrics(currentTrack.title, currentTrack.artist, normalized);
+        }
+        setLyrics(normalized);
         setLyricsLoading(false);
       })
       .catch((err) => {
@@ -255,14 +281,18 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
           aria-modal="true"
           aria-label="Now Playing"
         >
-          {/* Fast lightweight ambient backdrop (replaces expensive blur-[100px] on low RAM) */}
+          {/* Fast lightweight ambient backdrop (desktop blur, mobile crisp gradient tint for 120fps) */}
           {currentTrack.artwork && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 opacity-20 dark:opacity-25 blur-2xl scale-110 bg-cover bg-center"
+              className="hidden md:block pointer-events-none absolute inset-0 opacity-20 dark:opacity-25 blur-2xl scale-110 bg-cover bg-center"
               style={{ backgroundImage: `url(${currentTrack.artwork})` }}
             />
           )}
+          <div
+            aria-hidden="true"
+            className="md:hidden pointer-events-none absolute inset-0 bg-gradient-to-b from-[#FF4D2E]/10 via-transparent to-black/10 dark:to-black/35"
+          />
 
           {/* Top iOS Sheet Handle + Floating Header */}
           <div className="relative z-10 px-4 pt-2 md:px-6 shrink-0 space-y-1.5">
@@ -282,84 +312,60 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
               </button>
 
               {/* Audio vs Video MV Switch */}
-              <LayoutGroup id="sheet-media-mode">
-                <div className="inline-flex items-center gap-0.5 p-1 rounded-full ios-glass-pill">
-                  <button
-                    type="button"
-                    onClick={() => setMediaMode('audio')}
-                    className={`relative inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      mediaMode === 'audio' ? 'text-zinc-950 dark:text-white' : 'text-zinc-600 dark:text-zinc-400'
-                    }`}
-                  >
-                    {mediaMode === 'audio' && (
-                      <motion.span
-                        layoutId="now-playing-mode-pill"
-                        transition={IOS_SPRING_SNAPPY}
-                        className="absolute inset-0 rounded-full bg-white/95 dark:bg-white/[0.16] shadow-xs"
-                      />
-                    )}
-                    <Headphones className="relative z-10 w-3.5 h-3.5" />
-                    <span className="relative z-10">Audio</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMediaMode('video')}
-                    className={`relative inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      mediaMode === 'video' ? 'text-zinc-950 dark:text-white' : 'text-zinc-600 dark:text-zinc-400'
-                    }`}
-                  >
-                    {mediaMode === 'video' && (
-                      <motion.span
-                        layoutId="now-playing-mode-pill"
-                        transition={IOS_SPRING_SNAPPY}
-                        className="absolute inset-0 rounded-full bg-white/95 dark:bg-white/[0.16] shadow-xs"
-                      />
-                    )}
-                    <Film className="relative z-10 w-3.5 h-3.5 text-[#FF4D2E]" />
-                    <span className="relative z-10">Video MV</span>
-                  </button>
-                </div>
-              </LayoutGroup>
+              <div className="inline-flex items-center gap-0.5 p-1 rounded-full ios-glass-pill">
+                <button
+                  type="button"
+                  onClick={() => setMediaMode('audio')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium active:scale-95 transition-[background-color,color,transform] duration-150 ${
+                    mediaMode === 'audio'
+                      ? 'bg-white/95 dark:bg-white/[0.16] text-zinc-950 dark:text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400'
+                  }`}
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  <span>Audio</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMediaMode('video')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium active:scale-95 transition-[background-color,color,transform] duration-150 ${
+                    mediaMode === 'video'
+                      ? 'bg-white/95 dark:bg-white/[0.16] text-zinc-950 dark:text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400'
+                  }`}
+                >
+                  <Film className="w-3.5 h-3.5 text-[#FF4D2E]" />
+                  <span>Video MV</span>
+                </button>
+              </div>
 
               {/* Lyrics vs Queue Switch */}
-              <LayoutGroup id="sheet-panel-tab">
-                <div className="inline-flex items-center gap-0.5 p-1 rounded-full ios-glass-pill">
-                  <button
-                    type="button"
-                    onClick={() => setTab('lyrics')}
-                    className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      tab === 'lyrics' ? 'text-zinc-950 dark:text-white' : 'text-zinc-600 dark:text-zinc-400'
-                    }`}
-                  >
-                    {tab === 'lyrics' && (
-                      <motion.span
-                        layoutId="now-playing-panel-pill"
-                        transition={IOS_SPRING_SNAPPY}
-                        className="absolute inset-0 rounded-full bg-white/95 dark:bg-white/[0.16] shadow-xs"
-                      />
-                    )}
-                    <Mic2 className="relative z-10 w-3.5 h-3.5" />
-                    <span className="relative z-10 hidden sm:inline">Lyrics</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTab('queue')}
-                    className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      tab === 'queue' ? 'text-zinc-950 dark:text-white' : 'text-zinc-600 dark:text-zinc-400'
-                    }`}
-                  >
-                    {tab === 'queue' && (
-                      <motion.span
-                        layoutId="now-playing-panel-pill"
-                        transition={IOS_SPRING_SNAPPY}
-                        className="absolute inset-0 rounded-full bg-white/95 dark:bg-white/[0.16] shadow-xs"
-                      />
-                    )}
-                    <ListMusic className="relative z-10 w-3.5 h-3.5" />
-                    <span className="relative z-10 hidden sm:inline">Queue ({queue.length})</span>
-                  </button>
-                </div>
-              </LayoutGroup>
+              <div className="inline-flex items-center gap-0.5 p-1 rounded-full ios-glass-pill">
+                <button
+                  type="button"
+                  onClick={() => setTab('lyrics')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium active:scale-95 transition-[background-color,color,transform] duration-150 ${
+                    tab === 'lyrics'
+                      ? 'bg-white/95 dark:bg-white/[0.16] text-zinc-950 dark:text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400'
+                  }`}
+                >
+                  <Mic2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Lyrics</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('queue')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium active:scale-95 transition-[background-color,color,transform] duration-150 ${
+                    tab === 'queue'
+                      ? 'bg-white/95 dark:bg-white/[0.16] text-zinc-950 dark:text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400'
+                  }`}
+                >
+                  <ListMusic className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Queue ({queue.length})</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -452,23 +458,41 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                         {currentTrack.artist}
                       </button>
                       {mediaMode === 'audio' && (
-                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 flex items-center gap-1.5">
+                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 flex flex-wrap items-center gap-2">
                           {streamError ? (
                             <span className="text-red-500">{streamError}</span>
                           ) : streamInfo ? (
-                            <>
-                              <span>{streamInfo.fullLength ? 'Full Audio Stream' : '30s Preview'}</span>
-                              <span aria-hidden="true">·</span>
+                            <span>
+                              {streamInfo.fullLength ? 'Full Audio Stream' : '30s Preview'} ·{' '}
                               <span className="capitalize">{streamInfo.source}</span>
-                            </>
+                            </span>
                           ) : (
                             <span>Connecting audio stream...</span>
                           )}
+                          <LiveSpectrumBars />
                         </div>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                      <button
+                        type="button"
+                        onClick={() => void startArtistRadio(currentTrack)}
+                        title="Start Artist Radio"
+                        aria-label="Start Artist Radio"
+                        className="p-2 rounded-full ios-glass-pill text-zinc-500 hover:text-[#FF4D2E] active:scale-90 transition-all"
+                      >
+                        <Radio className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTrackInfoTarget(currentTrack)}
+                        title="Track Info & Credits"
+                        aria-label="Track Info and Credits"
+                        className="p-2 rounded-full ios-glass-pill text-zinc-500 hover:text-zinc-900 dark:hover:text-white active:scale-90 transition-all"
+                      >
+                        <Info className="w-4 h-4" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => setEqModalOpen(true)}
@@ -685,7 +709,7 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                 onTouchMove={() => {
                   if (lyrics?.synced && tab === 'lyrics') setManualScrollPaused(true);
                 }}
-                className="relative lg:col-span-6 rounded-[28px] ios-glass p-6 min-h-[380px] max-h-[68vh] overflow-y-auto"
+                className="relative lg:col-span-6 rounded-[28px] ios-glass-surface p-6 min-h-[380px] max-h-[68vh] overflow-y-auto"
               >
                 {tab === 'lyrics' ? (
                   lyricsLoading ? (
@@ -706,78 +730,146 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                     </div>
                   ) : lyrics.synced ? (
                     <>
-                      <div className="sticky top-0 z-20 flex items-center justify-end gap-2 pb-2 pointer-events-none">
-                        {manualScrollPaused && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setManualScrollPaused(false);
-                              scrollToActiveLine();
-                            }}
-                            className="pointer-events-auto px-3 py-1.5 rounded-full bg-[#FF4D2E] text-white text-xs font-semibold shadow-md active:scale-95 transition-transform"
-                          >
-                            Resume Sync
-                          </button>
-                        )}
-                        {shareableLyricLines.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShareInitialLine(Math.max(0, activeLineIdx));
-                              setShareLyricsOpen(true);
-                            }}
-                            className="pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full ios-glass-pill text-xs font-semibold text-zinc-800 dark:text-zinc-100 hover:text-[#FF4D2E] shadow-sm active:scale-95 transition-all"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-[#FF4D2E]" />
-                            <span>Share Lyrics</span>
-                          </button>
-                        )}
-                      </div>
-                      <div className="space-y-3.5 py-2">
-                        {lyrics.lines.map((line, i) => {
-                          const active = i === activeLineIdx;
-                          return (
+                      <div className="sticky top-0 z-20 space-y-2 pb-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+                            {lyricsFromCache ? 'Offline Ready · Tap line to seek' : 'Synced · Double-tap line to share'}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {manualScrollPaused && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setManualScrollPaused(false);
+                                  scrollToActiveLine();
+                                }}
+                                className="px-3 py-1.5 rounded-full bg-[#FF4D2E] text-white text-xs font-semibold shadow-md active:scale-95 transition-transform"
+                              >
+                                Resume Sync
+                              </button>
+                            )}
                             <button
-                              key={`${line.timeSec}-${i}`}
-                              ref={active ? activeLineRef : undefined}
                               type="button"
                               onClick={() => {
-                                setManualScrollPaused(false);
-                                if (mediaMode === 'video') {
-                                  mvPlayerRef.current?.seekTo(line.timeSec);
-                                } else {
-                                  seekTo(line.timeSec);
-                                }
+                                setLyricSearchOpen((v) => !v);
+                                if (lyricSearchOpen) setLyricQuery('');
                               }}
-                              className={`block w-full text-left font-display ${syncedTextClass} leading-snug transition-all duration-200 ${
-                                active
-                                  ? 'text-[#FF4D2E] font-bold scale-[1.01] origin-left opacity-100'
-                                  : 'text-zinc-700 dark:text-zinc-300 opacity-55 hover:opacity-90'
+                              aria-label="Search lyrics"
+                              title="Search inside lyrics"
+                              className={`p-1.5 rounded-full ios-glass-pill transition-colors ${
+                                lyricSearchOpen ? 'text-[#FF4D2E]' : 'text-zinc-600 dark:text-zinc-300'
                               }`}
                             >
-                              {line.text}
+                              <Search className="w-3.5 h-3.5" />
                             </button>
+                            {shareableLyricLines.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShareInitialLine(Math.max(0, activeLineIdx));
+                                  setShareLyricsOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full ios-glass-pill text-xs font-semibold text-zinc-800 dark:text-zinc-100 hover:text-[#FF4D2E] shadow-sm active:scale-95 transition-all"
+                              >
+                                <Sparkles className="w-3.5 h-3.5 text-[#FF4D2E]" />
+                                <span>Share Lyrics</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {lyricSearchOpen && (
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              value={lyricQuery}
+                              onChange={(e) => setLyricQuery(e.target.value)}
+                              placeholder="Jump to lyric line..."
+                              autoFocus
+                              className="w-full h-8 pl-8 pr-8 rounded-full text-xs bg-black/[0.06] dark:bg-white/[0.08] border border-black/[0.06] dark:border-white/[0.1] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-[#FF4D2E]"
+                            />
+                            {lyricQuery && (
+                              <button
+                                type="button"
+                                onClick={() => setLyricQuery('')}
+                                aria-label="Clear lyric search"
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:hover:text-white"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-3.5 py-2">
+                        {lyrics.lines.map((line, i) => {
+                          const q = lyricQuery.trim().toLowerCase();
+                          if (q && !line.text.toLowerCase().includes(q)) return null;
+                          const active = i === activeLineIdx;
+                          return (
+                            <div key={`${line.timeSec}-${i}`} className="group/line flex items-start gap-2">
+                              <button
+                                ref={active ? activeLineRef : undefined}
+                                type="button"
+                                onClick={() => {
+                                  setManualScrollPaused(false);
+                                  if (mediaMode === 'video') {
+                                    mvPlayerRef.current?.seekTo(line.timeSec);
+                                  } else {
+                                    seekTo(line.timeSec);
+                                  }
+                                }}
+                                onDoubleClick={() => {
+                                  setShareInitialLine(i);
+                                  setShareLyricsOpen(true);
+                                }}
+                                className={`block flex-1 text-left font-display ${syncedTextClass} leading-snug transition-all duration-200 ${
+                                  active
+                                    ? 'text-[#FF4D2E] font-bold scale-[1.01] origin-left opacity-100'
+                                    : 'text-zinc-700 dark:text-zinc-300 opacity-60 hover:opacity-95'
+                                }`}
+                              >
+                                {line.text}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShareInitialLine(i);
+                                  setShareLyricsOpen(true);
+                                }}
+                                title="Share this lyric line"
+                                aria-label="Share this lyric line"
+                                className="opacity-0 group-hover/line:opacity-100 focus:opacity-100 p-1.5 rounded-full text-zinc-400 hover:text-[#FF4D2E] transition-opacity shrink-0"
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           );
                         })}
                       </div>
                     </>
                   ) : (
                     <div className="space-y-3">
-                      {shareableLyricLines.length > 0 && (
-                        <div className="sticky top-0 z-20 flex justify-end pointer-events-none">
+                      <div className="sticky top-0 z-20 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+                          {lyricsFromCache ? 'Offline Cached Lyrics' : 'Plain Lyrics'}
+                        </span>
+                        {shareableLyricLines.length > 0 && (
                           <button
                             type="button"
                             onClick={() => {
                               setShareInitialLine(0);
                               setShareLyricsOpen(true);
                             }}
-                            className="pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full ios-glass-pill text-xs font-semibold text-zinc-800 dark:text-zinc-100 hover:text-[#FF4D2E] shadow-sm active:scale-95 transition-all"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full ios-glass-pill text-xs font-semibold text-zinc-800 dark:text-zinc-100 hover:text-[#FF4D2E] shadow-sm active:scale-95 transition-all"
                           >
                             <Sparkles className="w-3.5 h-3.5 text-[#FF4D2E]" />
                             <span>Share Lyrics</span>
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                       <pre className={`whitespace-pre-wrap font-sans ${plainTextClass} leading-relaxed text-zinc-700 dark:text-zinc-300`}>
                         {lyrics.plainText}
                       </pre>

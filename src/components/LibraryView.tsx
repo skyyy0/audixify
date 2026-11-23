@@ -1,10 +1,13 @@
-import { useState } from 'react';
-import { Heart, ListMusic, Play, Plus, Trash2, Users } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Download, Heart, Layers, ListMusic, Play, Plus, Search, Trash2, Users } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
+import type { Track } from '../types/music';
 import { formatRegionLabel } from '../utils/format';
 import { Artwork } from './Artwork';
 import { CollaborativePlaylistsSection } from './CollaborativePlaylistsSection';
 import { TrackRow } from './TrackRow';
+
+type LibrarySortMode = 'added' | 'title' | 'artist';
 
 interface LibraryViewProps {
   activePlaylistId: string | null;
@@ -12,8 +15,25 @@ interface LibraryViewProps {
   onArtistClick: (name: string) => void;
   onAlbumClick: (title: string, artist: string) => void;
   onExploreClick: () => void;
+  onOpenCollageStudio?: () => void;
   initialJoinCode?: string | null;
   onClearJoinCode?: () => void;
+}
+
+function filterAndSortTracks(tracks: Track[], query: string, sort: LibrarySortMode): Track[] {
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? tracks.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          t.artist.toLowerCase().includes(q) ||
+          (t.album || '').toLowerCase().includes(q),
+      )
+    : tracks;
+  if (sort === 'added') return filtered;
+  return [...filtered].sort((a, b) =>
+    sort === 'title' ? a.title.localeCompare(b.title) : a.artist.localeCompare(b.artist),
+  );
 }
 
 export function LibraryView({
@@ -22,6 +42,7 @@ export function LibraryView({
   onArtistClick,
   onAlbumClick,
   onExploreClick,
+  onOpenCollageStudio,
   initialJoinCode,
   onClearJoinCode,
 }: LibraryViewProps) {
@@ -34,14 +55,29 @@ export function LibraryView({
     createPlaylist,
     deletePlaylist,
     removeTrackFromPlaylist,
+    showToast,
   } = usePlayer();
 
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [likedQuery, setLikedQuery] = useState('');
+  const [likedSort, setLikedSort] = useState<LibrarySortMode>('added');
+  const [playlistQuery, setPlaylistQuery] = useState('');
+  const [playlistSort, setPlaylistSort] = useState<LibrarySortMode>('added');
 
   const selectedPlaylist = activePlaylistId
     ? playlists.find((p) => p.id === activePlaylistId) || null
     : null;
+
+  const filteredLiked = useMemo(
+    () => filterAndSortTracks(likedTracks, likedQuery, likedSort),
+    [likedTracks, likedQuery, likedSort],
+  );
+
+  const filteredPlaylistTracks = useMemo(
+    () => (selectedPlaylist ? filterAndSortTracks(selectedPlaylist.tracks, playlistQuery, playlistSort) : []),
+    [selectedPlaylist, playlistQuery, playlistSort],
+  );
 
   const handleCreatePlaylist = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +86,24 @@ export function LibraryView({
     setNewName('');
     setNewDesc('');
     onSelectPlaylist(created.id);
+  };
+
+  const handleExportPlaylist = async (pl: NonNullable<typeof selectedPlaylist>) => {
+    const textLines = pl.tracks.map((t, i) => `${i + 1}. ${t.title} — ${t.artist}`);
+    const payload = `${pl.name} (${pl.tracks.length} tracks)\n\n${textLines.join('\n')}`;
+    try {
+      await navigator.clipboard.writeText(payload);
+      showToast('Playlist tracklist copied');
+    } catch {
+      const blob = new Blob([JSON.stringify(pl, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${pl.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'playlist'}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Playlist JSON exported');
+    }
   };
 
   if (selectedPlaylist) {
@@ -73,16 +127,26 @@ export function LibraryView({
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             {selectedPlaylist.tracks.length > 0 && (
-              <button
-                type="button"
-                onClick={() => playTrack(selectedPlaylist.tracks[0], selectedPlaylist.tracks)}
-                className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-[#FF4D2E] text-white text-xs font-semibold hover:bg-[#E63E21] active:scale-95 transition-all shadow-md"
-              >
-                <Play className="w-3.5 h-3.5 fill-white" />
-                <span>Play All</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => playTrack(filteredPlaylistTracks[0] || selectedPlaylist.tracks[0], selectedPlaylist.tracks)}
+                  className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-[#FF4D2E] text-white text-xs font-semibold hover:bg-[#E63E21] active:scale-95 transition-all shadow-md"
+                >
+                  <Play className="w-3.5 h-3.5 fill-white" />
+                  <span>Play All</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleExportPlaylist(selectedPlaylist)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full ios-glass-pill text-xs font-medium text-zinc-700 dark:text-zinc-200 active:scale-95 transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export</span>
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -98,6 +162,41 @@ export function LibraryView({
             </button>
           </div>
         </div>
+
+        {selectedPlaylist.tracks.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={playlistQuery}
+                onChange={(e) => setPlaylistQuery(e.target.value)}
+                placeholder="Filter songs in playlist..."
+                className="w-full h-9 pl-8 pr-3 rounded-full text-xs bg-black/[0.045] dark:bg-white/[0.065] border border-black/[0.05] dark:border-white/[0.08] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-[#FF4D2E]"
+              />
+            </div>
+            <div className="flex items-center gap-1 p-1 rounded-full ios-glass-pill self-start">
+              {([
+                { id: 'added', label: 'Added' },
+                { id: 'title', label: 'Title A–Z' },
+                { id: 'artist', label: 'Artist A–Z' },
+              ] as const).map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setPlaylistSort(s.id)}
+                  className={`px-3 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                    playlistSort === s.id
+                      ? 'bg-[#FF4D2E] text-white'
+                      : 'text-zinc-600 dark:text-zinc-300'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {selectedPlaylist.tracks.length === 0 ? (
           <div className="rounded-[24px] ios-glass p-8 text-center space-y-3">
@@ -116,14 +215,18 @@ export function LibraryView({
               Browse Music
             </button>
           </div>
+        ) : filteredPlaylistTracks.length === 0 ? (
+          <div className="rounded-[24px] ios-glass p-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
+            No matching songs for &ldquo;{playlistQuery}&rdquo;
+          </div>
         ) : (
           <div className="rounded-[26px] ios-glass divide-y divide-black/[0.05] dark:divide-white/[0.06] p-1.5">
-            {selectedPlaylist.tracks.map((track, idx) => (
+            {filteredPlaylistTracks.map((track, idx) => (
               <TrackRow
                 key={track.id}
                 track={track}
                 index={idx}
-                contextList={selectedPlaylist.tracks}
+                contextList={filteredPlaylistTracks}
                 onArtistClick={onArtistClick}
                 onAlbumClick={onAlbumClick}
                 onRemoveFromPlaylist={() => removeTrackFromPlaylist(selectedPlaylist.id, track.id)}
@@ -137,13 +240,25 @@ export function LibraryView({
 
   return (
     <div className="space-y-9 pb-10">
-      <div>
-        <h1 className="font-display text-2xl md:text-3xl font-bold text-zinc-950 dark:text-white">
-          Your Library
-        </h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-          Followed artists, liked songs, custom playlists, and listening history
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl md:text-3xl font-bold text-zinc-950 dark:text-white">
+            Your Library
+          </h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+            Followed artists, liked songs, custom playlists, and listening history
+          </p>
+        </div>
+        {onOpenCollageStudio && (
+          <button
+            type="button"
+            onClick={onOpenCollageStudio}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full ios-glass-pill text-xs font-semibold text-zinc-800 dark:text-zinc-100 hover:border-[#FF4D2E]/40 active:scale-95 transition-all self-start sm:self-auto whitespace-nowrap"
+          >
+            <Layers className="w-3.5 h-3.5 text-[#FF4D2E]" />
+            <span>Kartu Story 3 Lagu</span>
+          </button>
+        )}
       </div>
 
       {/* Followed Artists */}
@@ -253,7 +368,7 @@ export function LibraryView({
 
       {/* Liked Songs */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Heart className="w-4 h-4 text-[#FF4D2E] fill-current" />
             <h2 className="font-display text-lg font-bold text-zinc-900 dark:text-zinc-100">
@@ -263,7 +378,7 @@ export function LibraryView({
           {likedTracks.length > 0 && (
             <button
               type="button"
-              onClick={() => playTrack(likedTracks[0], likedTracks)}
+              onClick={() => playTrack(filteredLiked[0] || likedTracks[0], filteredLiked.length ? filteredLiked : likedTracks)}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 text-xs font-medium active:scale-95 transition-transform"
             >
               <Play className="w-3 h-3 fill-current" />
@@ -271,6 +386,41 @@ export function LibraryView({
             </button>
           )}
         </div>
+
+        {likedTracks.length > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={likedQuery}
+                onChange={(e) => setLikedQuery(e.target.value)}
+                placeholder="Filter liked songs..."
+                className="w-full h-9 pl-8 pr-3 rounded-full text-xs bg-black/[0.045] dark:bg-white/[0.065] border border-black/[0.05] dark:border-white/[0.08] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-[#FF4D2E]"
+              />
+            </div>
+            <div className="flex items-center gap-1 p-1 rounded-full ios-glass-pill self-start">
+              {([
+                { id: 'added', label: 'Added' },
+                { id: 'title', label: 'Title A–Z' },
+                { id: 'artist', label: 'Artist A–Z' },
+              ] as const).map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setLikedSort(s.id)}
+                  className={`px-3 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                    likedSort === s.id
+                      ? 'bg-[#FF4D2E] text-white'
+                      : 'text-zinc-600 dark:text-zinc-300'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {likedTracks.length === 0 ? (
           <div className="rounded-[24px] ios-glass p-8 text-center space-y-2">
@@ -281,14 +431,18 @@ export function LibraryView({
               Click the heart icon on any track to save it to your collection.
             </p>
           </div>
+        ) : filteredLiked.length === 0 ? (
+          <div className="rounded-[24px] ios-glass p-8 text-center text-xs text-zinc-500 dark:text-zinc-400">
+            No liked songs match &ldquo;{likedQuery}&rdquo;
+          </div>
         ) : (
           <div className="rounded-[26px] ios-glass divide-y divide-black/[0.05] dark:divide-white/[0.06] p-1.5">
-            {likedTracks.map((track, idx) => (
+            {filteredLiked.map((track, idx) => (
               <TrackRow
                 key={track.id}
                 track={track}
                 index={idx}
-                contextList={likedTracks}
+                contextList={filteredLiked}
                 onArtistClick={onArtistClick}
                 onAlbumClick={onAlbumClick}
               />

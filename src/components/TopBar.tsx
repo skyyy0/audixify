@@ -1,4 +1,4 @@
-import { LayoutGroup, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import { Moon, Search, Sun, User, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -100,38 +100,29 @@ export function TopBar({
 
         {/* Region Segmented Capsule + Theme Switch */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-          <LayoutGroup id="topbar-region-group">
-            <div
-              className="hidden lg:flex items-center gap-0.5 p-1 rounded-full ios-glass-pill"
-              role="group"
-              aria-label="Region filter"
-            >
-              {REGION_TABS.map((tab) => {
-                const active = regionScope === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => onRegionChange(tab.id)}
-                    className={`relative px-3.5 py-1.5 text-xs font-medium rounded-full transition-colors whitespace-nowrap shrink-0 ${
-                      active
-                        ? 'text-zinc-950 dark:text-white'
-                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-                    }`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="region-pill"
-                        transition={IOS_SPRING_SNAPPY}
-                        className="absolute inset-0 rounded-full bg-white/95 dark:bg-white/[0.16] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_2px_8px_rgba(0,0,0,0.08)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_2px_10px_rgba(0,0,0,0.3)]"
-                      />
-                    )}
-                    <span className="relative z-10">{tab.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </LayoutGroup>
+          <div
+            className="hidden lg:flex items-center gap-0.5 p-1 rounded-full ios-glass-pill"
+            role="group"
+            aria-label="Region filter"
+          >
+            {REGION_TABS.map((tab) => {
+              const active = regionScope === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => onRegionChange(tab.id)}
+                  className={`px-3.5 py-1.5 text-xs font-medium rounded-full active:scale-95 transition-[background-color,color,transform] duration-150 whitespace-nowrap shrink-0 ${
+                    active
+                      ? 'bg-white/95 dark:bg-white/[0.16] text-zinc-950 dark:text-white shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
 
           <motion.button
             type="button"

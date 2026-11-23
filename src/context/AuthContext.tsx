@@ -121,15 +121,21 @@ function applyPerfAttribute(perfMode: AppPreferences['perfMode']) {
   if (perfMode === 'lite') {
     root.setAttribute('data-perf', 'lite');
   } else if (perfMode === 'full') {
-    root.removeAttribute('data-perf');
+    root.setAttribute('data-perf', 'full');
   } else {
     const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
     const reduced =
       typeof window !== 'undefined' &&
       window.matchMedia &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const coarsePointer =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(pointer: coarse)').matches;
     if ((typeof mem === 'number' && mem <= 3) || reduced) {
       root.setAttribute('data-perf', 'lite');
+    } else if (coarsePointer || (typeof mem === 'number' && mem <= 8)) {
+      root.setAttribute('data-perf', 'smooth');
     } else {
       root.removeAttribute('data-perf');
     }

@@ -1,11 +1,9 @@
-import { LayoutGroup, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
-import { Disc3, Film, ListPlus, Pause, Play, RefreshCw } from 'lucide-react';
+import { Disc3, Film, Layers, ListPlus, Pause, Play, RefreshCw } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import type { DiscoverPayload, GenreDefinition, RegionScope, Track } from '../types/music';
 import { apiFetch } from '../utils/apiFetch';
 import { formatDuration, formatRegionLabel } from '../utils/format';
-import { IOS_SPRING_SNAPPY } from '../utils/motion';
 import { Artwork } from './Artwork';
 import { ReleaseRadarSection } from './ReleaseRadarSection';
 import { TrackCard } from './TrackCard';
@@ -43,6 +41,7 @@ interface DiscoverViewProps {
   onOpenCharts: () => void;
   onArtistClick: (name: string) => void;
   onAlbumClick: (title: string, artist: string) => void;
+  onOpenCollageStudio?: () => void;
 }
 
 export function DiscoverView({
@@ -55,6 +54,7 @@ export function DiscoverView({
   onOpenCharts,
   onArtistClick,
   onAlbumClick,
+  onOpenCollageStudio,
 }: DiscoverViewProps) {
   const {
     currentTrack,
@@ -225,63 +225,45 @@ export function DiscoverView({
     <div className="space-y-8 pb-10">
       {/* Mobile/Tablet Region Switcher + Genre Filter Capsule Bar */}
       <section aria-label="Genres and regions" className="space-y-2.5">
-        <LayoutGroup id="mobile-region-pills">
-          <div className="flex lg:hidden items-center gap-1 p-1 rounded-full ios-glass-pill w-fit">
-            {REGION_OPTIONS.map((tab) => {
-              const active = regionScope === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => onRegionChange(tab.id)}
-                  className={`relative px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                    active
-                      ? 'text-zinc-950 dark:text-white'
-                      : 'text-zinc-600 dark:text-zinc-400'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="mobile-region-active-pill"
-                      transition={IOS_SPRING_SNAPPY}
-                      className="absolute inset-0 rounded-full bg-white/95 dark:bg-white/[0.16] shadow-xs"
-                    />
-                  )}
-                  <span className="relative z-10">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </LayoutGroup>
+        <div className="flex lg:hidden items-center gap-1 p-1 rounded-full ios-glass-pill w-fit">
+          {REGION_OPTIONS.map((tab) => {
+            const active = regionScope === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onRegionChange(tab.id)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap active:scale-95 transition-[background-color,color,transform] duration-250 ease-[cubic-bezier(0.22,1.14,0.36,1)] ${
+                  active
+                    ? 'bg-white/95 dark:bg-white/[0.16] text-zinc-950 dark:text-white shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
 
-        <LayoutGroup id="discover-genre-pills">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-            {GENRES.map((genre) => {
-              const active = selectedGenre === genre.id;
-              return (
-                <button
-                  key={genre.id}
-                  type="button"
-                  onClick={() => setSelectedGenre(genre.id)}
-                  className={`relative px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap shrink-0 active:scale-95 transition-all ${
-                    active
-                      ? 'text-white dark:text-zinc-950'
-                      : 'ios-glass-pill text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="genre-active-pill"
-                      transition={IOS_SPRING_SNAPPY}
-                      className="absolute inset-0 rounded-full bg-zinc-950 dark:bg-white shadow-sm"
-                    />
-                  )}
-                  <span className="relative z-10">{genre.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </LayoutGroup>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {GENRES.map((genre) => {
+            const active = selectedGenre === genre.id;
+            return (
+              <button
+                key={genre.id}
+                type="button"
+                onClick={() => setSelectedGenre(genre.id)}
+                className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap shrink-0 active:scale-95 transition-[background-color,color,transform] duration-250 ease-[cubic-bezier(0.22,1.14,0.36,1)] ${
+                  active
+                    ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-sm'
+                    : 'ios-glass-pill text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white'
+                }`}
+              >
+                {genre.label}
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       {selectedGenre !== 'all' ? (
@@ -393,11 +375,11 @@ export function DiscoverView({
 
           {/* Focal Hero Spotlight */}
           {featured && (
-            <section className="relative overflow-hidden rounded-[28px] ios-glass p-5 md:p-7">
+            <section className="relative overflow-hidden rounded-[28px] ios-glass-surface p-5 md:p-7">
               {featured.artwork && (
                 <div
                   aria-hidden="true"
-                  className="pointer-events-none absolute -right-12 -top-12 w-72 h-72 rounded-full opacity-20 dark:opacity-25 blur-2xl bg-cover bg-center"
+                  className="hidden md:block pointer-events-none absolute -right-12 -top-12 w-72 h-72 rounded-full opacity-20 dark:opacity-25 blur-2xl bg-cover bg-center"
                   style={{ backgroundImage: `url(${featured.artwork})` }}
                 />
               )}
@@ -487,6 +469,16 @@ export function DiscoverView({
                       <ListPlus className="w-4 h-4" />
                       <span>Queue</span>
                     </button>
+                    {onOpenCollageStudio && (
+                      <button
+                        type="button"
+                        onClick={onOpenCollageStudio}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full ios-glass-pill text-zinc-700 dark:text-zinc-200 text-sm font-medium hover:bg-white/80 dark:hover:bg-white/[0.12] active:scale-95 transition-all whitespace-nowrap"
+                      >
+                        <Layers className="w-4 h-4 text-[#FF4D2E]" />
+                        <span>Story Collage</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -695,13 +687,14 @@ export function DiscoverView({
                     key={album.id}
                     type="button"
                     onClick={() => onAlbumClick(album.title, album.artist)}
-                    className="group p-2.5 rounded-[22px] ios-glass-card text-left hover:-translate-y-0.5 active:scale-[0.97] transition-all"
+                    className="group p-2.5 rounded-[22px] ios-glass-card text-left hover:-translate-y-0.5 active:scale-[0.97] transition-transform duration-150"
                   >
                     <Artwork
                       src={album.artwork}
                       alt={album.title}
                       className="w-full aspect-square mb-2.5 transition-transform duration-300 group-hover:scale-[1.03]"
                       rounded="rounded-2xl"
+                      thumb
                     />
                     <div className="text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate group-hover:text-[#FF4D2E]">
                       {album.title}

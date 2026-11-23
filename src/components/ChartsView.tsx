@@ -1,9 +1,7 @@
-import { LayoutGroup, motion } from 'motion/react';
 import { useState } from 'react';
 import { Play } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import type { DiscoverPayload } from '../types/music';
-import { IOS_SPRING_SNAPPY } from '../utils/motion';
 import { TrackRow } from './TrackRow';
 
 interface ChartsViewProps {
@@ -46,47 +44,37 @@ export function ChartsView({ data, loading, onArtistClick, onAlbumClick }: Chart
         </div>
 
         {list.length > 0 && (
-          <motion.button
+          <button
             type="button"
-            whileTap={{ scale: 0.95 }}
             onClick={() => playTrack(list[0], list)}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#FF4D2E] text-white text-sm font-semibold hover:bg-[#E63E21] transition-colors self-start sm:self-auto whitespace-nowrap shadow-md"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#FF4D2E] text-white text-sm font-semibold hover:bg-[#E63E21] active:scale-95 transition-transform self-start sm:self-auto whitespace-nowrap shadow-md"
           >
             <Play className="w-4 h-4 fill-white" />
             <span>Play Chart</span>
-          </motion.button>
+          </button>
         )}
       </div>
 
       {/* Segmented Liquid Glass Chart Tabs */}
-      <LayoutGroup id="charts-tab-pills">
-        <div className="inline-flex items-center gap-1 p-1 rounded-full ios-glass-pill overflow-x-auto max-w-full">
-          {tabs.map((item) => {
-            const active = tab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                className={`relative px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                  active
-                    ? 'text-zinc-950 dark:text-white'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="charts-active-pill"
-                    transition={IOS_SPRING_SNAPPY}
-                    className="absolute inset-0 rounded-full bg-white/95 dark:bg-white/[0.16] shadow-xs"
-                  />
-                )}
-                <span className="relative z-10">{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </LayoutGroup>
+      <div className="inline-flex items-center gap-1 p-1 rounded-full ios-glass-pill overflow-x-auto max-w-full">
+        {tabs.map((item) => {
+          const active = tab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              className={`px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap active:scale-95 transition-[background-color,color,transform] duration-250 ease-[cubic-bezier(0.22,1.14,0.36,1)] ${
+                active
+                  ? 'bg-white/95 dark:bg-white/[0.16] text-zinc-950 dark:text-white shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+              }`}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
 
       {loading && !data ? (
         <div className="space-y-2">
@@ -95,11 +83,11 @@ export function ChartsView({ data, loading, onArtistClick, onAlbumClick }: Chart
           ))}
         </div>
       ) : list.length === 0 ? (
-        <div className="rounded-[24px] ios-glass p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+        <div className="rounded-[24px] ios-glass-surface p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
           No chart entries available right now.
         </div>
       ) : (
-        <div className="rounded-[26px] ios-glass divide-y divide-black/[0.05] dark:divide-white/[0.06] p-1.5">
+        <div key={tab} className="rounded-[26px] ios-glass-surface divide-y divide-black/[0.05] dark:divide-white/[0.06] p-1.5 audixify-view-enter">
           {list.map((track, idx) => (
             <TrackRow
               key={track.id}

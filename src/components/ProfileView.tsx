@@ -1,5 +1,6 @@
 import { LayoutGroup, motion } from 'motion/react';
 import {
+  BarChart3,
   Camera,
   ChevronRight,
   CloudDownload,
@@ -10,6 +11,8 @@ import {
   Gauge,
   Globe,
   Info,
+  Keyboard,
+  Layers,
   LogIn,
   LogOut,
   MessageSquareText,
@@ -17,13 +20,15 @@ import {
   Moon,
   Save,
   Settings,
+  Share2,
   Sliders,
   Sparkles,
   Sun,
   Trash2,
   User,
+  Waves,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
 import {
@@ -34,7 +39,9 @@ import {
 } from '../types/account';
 import type { RegionScope } from '../types/music';
 import { compressImageFile } from '../utils/imageCompress';
+import { getListeningSummary } from '../utils/listeningStats';
 import { IOS_SPRING_SNAPPY } from '../utils/motion';
+import { ShareRecapModal } from './ShareRecapModal';
 import { DeveloperBadge, GreenVerifiedBadge } from './VerifiedBadge';
 import { AboutSkyPage } from './profile/AboutSkyPage';
 import { StreakBadgeVault } from './profile/StreakBadgeVault';
@@ -44,6 +51,8 @@ export type ProfileTab = 'account' | 'settings' | 'about';
 interface ProfileViewProps {
   onApplyDefaultRegion: (scope: RegionScope) => void;
   onOpenSupportPage: () => void;
+  onOpenShortcuts: () => void;
+  onOpenCollageStudio?: () => void;
   pwaState?: {
     isStandalone: boolean;
     snoozeRemainingHours: number;
@@ -54,6 +63,8 @@ interface ProfileViewProps {
 export function ProfileView({
   onApplyDefaultRegion,
   onOpenSupportPage,
+  onOpenShortcuts,
+  onOpenCollageStudio,
   pwaState,
 }: ProfileViewProps) {
   const {
@@ -83,6 +94,9 @@ export function ProfileView({
     showToast,
     eqSettings,
     setEqModalOpen,
+    fadeSeconds,
+    setFadeSeconds,
+    statsVersion,
   } = usePlayer();
 
   const [tab, setTab] = useState<ProfileTab>('account');
@@ -93,6 +107,9 @@ export function ProfileView({
   const [savingProfile, setSavingProfile] = useState(false);
   const [syncingCloud, setSyncingCloud] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [recapModalOpen, setRecapModalOpen] = useState(false);
+
+  const listeningSummary = useMemo(() => getListeningSummary(), [statsVersion]);
 
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -333,6 +350,99 @@ export function ProfileView({
       {tab === 'account' && (
         <div className="space-y-5">
           <StreakBadgeVault />
+
+          {/* 100% Real Listening Stats & Shareable Recap */}
+          <section className="rounded-[28px] ios-glass p-5 sm:p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-[#FF4D2E]" />
+                <h2 className="font-display text-base sm:text-lg font-bold text-zinc-950 dark:text-white">
+                  Your Listening Recap
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {onOpenCollageStudio && (
+                  <button
+                    type="button"
+                    onClick={onOpenCollageStudio}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full ios-glass-pill text-xs font-semibold text-zinc-800 dark:text-zinc-100 hover:border-[#FF4D2E]/40 active:scale-95 transition-all"
+                  >
+                    <Layers className="w-3.5 h-3.5 text-[#FF4D2E]" />
+                    <span>Story Collage (3 Lagu)</span>
+                  </button>
+                )}
+                {listeningSummary.totalPlays > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setRecapModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#FF4D2E] text-white text-xs font-semibold hover:bg-[#E63E21] active:scale-95 transition-all shadow-sm"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Share Recap</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {listeningSummary.totalPlays === 0 ? (
+              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
+                No tracks played in this session yet — play your first song to unlock your real
+                listening minutes, top artist, and exportable Recap card.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                <div className="md:col-span-5 grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl ios-glass-card p-3.5">
+                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Minutes Listened</div>
+                    <div className="font-mono text-2xl font-bold tabular-nums text-zinc-950 dark:text-white mt-0.5">
+                      {listeningSummary.totalMinutes}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl ios-glass-card p-3.5">
+                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Tracks Played</div>
+                    <div className="font-mono text-2xl font-bold tabular-nums text-zinc-950 dark:text-white mt-0.5">
+                      {listeningSummary.totalPlays}
+                    </div>
+                  </div>
+                  {listeningSummary.topArtists[0] && (
+                    <div className="col-span-2 rounded-2xl ios-glass-card p-3.5">
+                      <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Top Artist</div>
+                      <div className="font-display text-base font-bold text-zinc-950 dark:text-white truncate mt-0.5">
+                        {listeningSummary.topArtists[0].name}
+                      </div>
+                      <div className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        {listeningSummary.topArtists[0].plays} plays
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="md:col-span-7 rounded-2xl ios-glass-card divide-y divide-black/[0.05] dark:divide-white/[0.07]">
+                  <div className="px-3.5 py-2 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                    Top Songs
+                  </div>
+                  {listeningSummary.topTracks.slice(0, 3).map((tr, i) => (
+                    <div key={tr.id} className="px-3.5 py-2 flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="font-mono font-bold text-[#FF4D2E] w-4">0{i + 1}</span>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                            {tr.title}
+                          </div>
+                          <div className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                            {tr.artist}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="font-mono text-[11px] text-zinc-500 dark:text-zinc-400 shrink-0">
+                        {tr.plays}x
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
             {user ? (
@@ -690,7 +800,7 @@ export function ProfileView({
             </div>
           </section>
 
-          {/* Equalizer & PWA Install */}
+          {/* Equalizer, Smooth Fade & PWA Install */}
           <section className="rounded-[28px] ios-glass divide-y divide-black/[0.06] dark:divide-white/[0.07] overflow-hidden">
             <button
               type="button"
@@ -707,6 +817,55 @@ export function ProfileView({
                     {eqSettings.enabled
                       ? `Active (${eqSettings.presetId} · ${eqSettings.playbackRate}x speed)`
                       : 'Bypassed — tap to tune Bass Boost, Pop Indo, Vocal Clear, & more'}
+                  </div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-zinc-400" />
+            </button>
+
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <Waves className="w-4 h-4 text-[#FF4D2E]" />
+                <div>
+                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    Smooth Audio Fade
+                  </div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Gentle volume ramp when starting or switching songs
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 p-1 rounded-full ios-glass-pill self-start sm:self-auto">
+                {([0, 2, 4] as const).map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => setFadeSeconds(sec)}
+                    className={`px-3 py-1 rounded-full text-xs font-mono font-medium transition-colors ${
+                      fadeSeconds === sec
+                        ? 'bg-[#FF4D2E] text-white'
+                        : 'text-zinc-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {sec === 0 ? 'Off' : `${sec}s`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onOpenShortcuts}
+              className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-white/50 dark:hover:bg-white/[0.05] transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Keyboard className="w-4 h-4 text-[#FF4D2E]" />
+                <div>
+                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    Keyboard Shortcuts
+                  </div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                    View desktop hotkeys (or press ? anytime)
                   </div>
                 </div>
               </div>
@@ -804,6 +963,12 @@ export function ProfileView({
       )}
 
       {tab === 'about' && <AboutSkyPage onBackToSettings={() => setTab('settings')} />}
+
+      <ShareRecapModal
+        open={recapModalOpen}
+        onClose={() => setRecapModalOpen(false)}
+        summary={listeningSummary}
+      />
     </div>
   );
 }

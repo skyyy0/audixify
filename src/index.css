@@ -54,7 +54,7 @@
 }
 
 /* ==========================================================================
-   iOS Liquid Glass Material System (GPU-Tiered for 2GB - 16GB RAM Devices)
+   iOS Liquid Glass Material System (GPU-Compositor Tuned for 60/120fps)
    ========================================================================== */
 
 .ios-ambient-canvas {
@@ -73,121 +73,117 @@
     radial-gradient(ellipse 70% 50% at 50% 100%, rgba(30, 36, 52, 0.45), transparent 70%);
 }
 
-/* True blurred Liquid Glass reserved strictly for floating chrome & overlays */
+/* Floating Chrome Glass (TopBar, PlayerBar, Sidebar, Modals): Light Liquid Glass blur in auto/full modes; off only in lite */
 .ios-glass,
 .liquid-glass {
   background: linear-gradient(
     145deg,
-    rgba(255, 255, 255, 0.78) 0%,
-    rgba(255, 255, 255, 0.58) 100%
+    rgba(255, 255, 255, 0.84) 0%,
+    rgba(255, 255, 255, 0.68) 100%
   );
-  backdrop-filter: blur(24px) saturate(170%);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.76);
   box-shadow:
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.85),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.03),
-    0 10px 30px -12px rgba(15, 23, 42, 0.12);
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.88),
+    0 8px 24px -10px rgba(15, 23, 42, 0.12);
 }
 
 .dark .ios-glass,
 .dark .liquid-glass {
   background: linear-gradient(
     145deg,
-    rgba(26, 29, 39, 0.76) 0%,
-    rgba(15, 17, 24, 0.64) 100%
+    rgba(26, 29, 39, 0.82) 0%,
+    rgba(15, 17, 24, 0.72) 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.11);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow:
     inset 0 1px 0.5px rgba(255, 255, 255, 0.15),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2),
-    0 14px 36px -12px rgba(0, 0, 0, 0.56);
+    0 12px 28px -10px rgba(0, 0, 0, 0.52);
 }
 
-/* Mobile touch & low-RAM GPUs use crisp fast blur radius to lock 60fps */
-@media (hover: none) and (pointer: coarse) {
-  .ios-glass,
-  .liquid-glass {
-    backdrop-filter: blur(14px) saturate(145%);
-    -webkit-backdrop-filter: blur(14px) saturate(145%);
+:root:not([data-perf="lite"]) .ios-glass,
+:root:not([data-perf="lite"]) .liquid-glass {
+  backdrop-filter: blur(12px) saturate(155%);
+  -webkit-backdrop-filter: blur(12px) saturate(155%);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  :root:not([data-perf="lite"]):not([data-perf="smooth"]) .ios-glass,
+  :root:not([data-perf="lite"]):not([data-perf="smooth"]) .liquid-glass {
+    background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.76) 0%,
+      rgba(255, 255, 255, 0.56) 100%
+    );
+    backdrop-filter: blur(18px) saturate(165%);
+    -webkit-backdrop-filter: blur(18px) saturate(165%);
+  }
+
+  :root.dark:not([data-perf="lite"]):not([data-perf="smooth"]) .ios-glass,
+  :root.dark:not([data-perf="lite"]):not([data-perf="smooth"]) .liquid-glass {
+    background: linear-gradient(
+      145deg,
+      rgba(26, 29, 39, 0.76) 0%,
+      rgba(15, 17, 24, 0.64) 100%
+    );
   }
 }
 
+/* Explicit 'Lite' skips backdrop blur cleanly for ultra-low-end hardware */
 [data-perf="lite"] .ios-glass,
 [data-perf="lite"] .liquid-glass {
-  backdrop-filter: blur(8px) saturate(125%);
-  -webkit-backdrop-filter: blur(8px) saturate(125%);
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.9) 0%,
-    rgba(255, 255, 255, 0.78) 100%
-  );
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
-.dark[data-perf="lite"] .ios-glass,
-.dark[data-perf="lite"] .liquid-glass {
-  background: linear-gradient(
-    145deg,
-    rgba(24, 27, 36, 0.9) 0%,
-    rgba(16, 18, 25, 0.84) 100%
-  );
-}
-
-/* Scrolling cards: Zero offscreen backdrop-filter render targets = butter scroll on 2GB RAM! */
-.ios-glass-card {
+/* Large scrolling panels & cards: Zero backdrop-filter offscreen render targets = silky 60/120fps scroll */
+.ios-glass-card,
+.ios-glass-surface {
   contain: layout style paint;
   background: linear-gradient(
     155deg,
-    rgba(255, 255, 255, 0.74) 0%,
-    rgba(255, 255, 255, 0.54) 100%
+    rgba(255, 255, 255, 0.78) 0%,
+    rgba(255, 255, 255, 0.6) 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.72);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    0 4px 16px -6px rgba(15, 23, 42, 0.07);
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.22s ease;
+    0 4px 14px -6px rgba(15, 23, 42, 0.07);
+  transition: transform 0.24s cubic-bezier(0.22, 1.12, 0.36, 1),
+    opacity 0.2s ease;
 }
 
 @media (hover: hover) {
   .ios-glass-card:hover {
     background: linear-gradient(
       155deg,
-      rgba(255, 255, 255, 0.9) 0%,
-      rgba(255, 255, 255, 0.7) 100%
+      rgba(255, 255, 255, 0.92) 0%,
+      rgba(255, 255, 255, 0.74) 100%
     );
-    border-color: rgba(255, 255, 255, 0.92);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.95),
-      0 10px 24px -10px rgba(15, 23, 42, 0.12);
+    border-color: rgba(255, 255, 255, 0.94);
   }
 }
 
-.dark .ios-glass-card {
+.dark .ios-glass-card,
+.dark .ios-glass-surface {
   background: linear-gradient(
     155deg,
-    rgba(30, 33, 45, 0.68) 0%,
-    rgba(20, 22, 31, 0.56) 100%
+    rgba(30, 33, 45, 0.74) 0%,
+    rgba(20, 22, 31, 0.62) 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.085);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 6px 18px -8px rgba(0, 0, 0, 0.44);
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 6px 16px -8px rgba(0, 0, 0, 0.42);
 }
 
 @media (hover: hover) {
   .dark .ios-glass-card:hover {
     background: linear-gradient(
       155deg,
-      rgba(40, 44, 58, 0.78) 0%,
-      rgba(27, 30, 41, 0.66) 100%
+      rgba(40, 44, 58, 0.84) 0%,
+      rgba(27, 30, 41, 0.72) 100%
     );
     border-color: rgba(255, 255, 255, 0.16);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.16),
-      0 12px 28px -10px rgba(0, 0, 0, 0.58);
   }
 }
 
@@ -203,10 +199,10 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
-/* Content visibility skips offscreen section layout/paint on low-RAM mobile scroll */
+/* Content visibility skips offscreen section layout/paint on mobile scroll */
 .cv-section {
   content-visibility: auto;
-  contain-intrinsic-size: auto 320px;
+  contain-intrinsic-size: auto 300px;
 }
 
 /* Custom iOS-style sleek range slider */
@@ -217,7 +213,7 @@
   border-radius: 9999px;
   outline: none;
   cursor: pointer;
-  transition: height 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: height 0.16s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ios-slider:hover {
@@ -233,7 +229,7 @@
   background: #ffffff;
   border: 1.5px solid #FF4D2E;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
-  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ios-slider:hover::-webkit-slider-thumb,
@@ -277,6 +273,50 @@
   scrollbar-width: none;
 }
 
+/* ==========================================================================
+   Silky GPU-Only Micro-Animations (Transform & Opacity Only — Zero Layout Jank)
+   ========================================================================== */
+
+@keyframes audixify-view-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.992);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.audixify-view-enter {
+  animation: audixify-view-in 0.28s cubic-bezier(0.22, 1.06, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+@keyframes audixify-pop-keyframes {
+  0% { transform: scale(0.9); }
+  55% { transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+
+.audixify-pop {
+  animation: audixify-pop-keyframes 0.26s cubic-bezier(0.22, 1.12, 0.36, 1);
+}
+
+@keyframes audixify-disc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.audixify-disc-active {
+  animation: audixify-disc-spin 16s linear infinite;
+}
+
+.audixify-disc-paused {
+  animation: audixify-disc-spin 16s linear infinite;
+  animation-play-state: paused;
+}
+
 /* Equalizer bar animation for active playing track */
 @keyframes eq-bar-1 {
   0%, 100% { transform: scaleY(0.32); }
@@ -304,10 +344,19 @@
   animation: eq-bar-3 0.92s ease-in-out infinite;
 }
 
+[data-perf="lite"] .audixify-view-enter,
+[data-perf="lite"] .audixify-disc-active,
+[data-perf="lite"] .audixify-pop {
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-eq-1,
   .animate-eq-2,
-  .animate-eq-3 {
-    animation: none;
+  .animate-eq-3,
+  .audixify-view-enter,
+  .audixify-disc-active,
+  .audixify-pop {
+    animation: none !important;
   }
 }

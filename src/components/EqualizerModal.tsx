@@ -16,6 +16,8 @@ export function EqualizerModal() {
     setPreampDb,
     setPlaybackRate,
     resetEq,
+    fadeSeconds,
+    setFadeSeconds,
   } = usePlayer();
 
   // Build smooth SVG spline path across the 5 bands
@@ -279,6 +281,33 @@ export function EqualizerModal() {
                     </button>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl ios-glass-card p-3 flex items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                  Smooth Audio Fade
+                </div>
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Gentle volume ramp on track start &amp; transitions
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {([0, 2, 4] as const).map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => setFadeSeconds(sec)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold transition-colors ${
+                      fadeSeconds === sec
+                        ? 'bg-[#FF4D2E] text-white'
+                        : 'ios-glass-pill text-zinc-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {sec === 0 ? 'Off' : `${sec}s`}
+                  </button>
+                ))}
               </div>
             </div>
           </motion.div>

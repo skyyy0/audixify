@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
 import type { Track } from '../types/music';
 import { IOS_SPRING_SHEET } from '../utils/motion';
+import { drawRoundedRect, loadCorsSafeImage } from '../utils/canvasImage';
 import { Artwork } from './Artwork';
 
 type CardThemeId = 'obsidian' | 'pearl' | 'crimson' | 'cobalt';
@@ -81,27 +82,6 @@ interface ShareLyricsModalProps {
   initialLineIndex: number;
 }
 
-function drawRoundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
 function wrapTextLines(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -123,26 +103,6 @@ function wrapTextLines(
   return out;
 }
 
-function loadCorsSafeImage(url: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
-    if (!url) {
-      resolve(null);
-      return;
-    }
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    const timer = window.setTimeout(() => resolve(null), 2600);
-    img.onload = () => {
-      window.clearTimeout(timer);
-      resolve(img);
-    };
-    img.onerror = () => {
-      window.clearTimeout(timer);
-      resolve(null);
-    };
-    img.src = url;
-  });
-}
 
 export function ShareLyricsModal({
   open,

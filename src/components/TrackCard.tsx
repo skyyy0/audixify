@@ -67,7 +67,7 @@ export const TrackCard = memo(function TrackCard({
           }}
           title="Watch Music Video"
           aria-label={`Watch music video for ${track.title}`}
-          className="absolute bottom-2.5 left-2.5 h-8 px-2.5 rounded-full flex items-center gap-1 bg-black/70 border border-white/20 text-white text-[11px] font-medium opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 active:scale-95 transition-all duration-200 hover:bg-black/85"
+          className="absolute bottom-2.5 left-2.5 h-8 px-2.5 rounded-full flex items-center gap-1 bg-black/70 border border-white/20 text-white text-[11px] font-medium opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 active:scale-95 transition-[opacity,transform] duration-150 hover:bg-black/85"
         >
           <Film className="w-3 h-3" />
           <span>MV</span>
@@ -78,7 +78,7 @@ export const TrackCard = memo(function TrackCard({
           type="button"
           onClick={handlePlay}
           aria-label={isCurrent && isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
-          className={`absolute bottom-2.5 right-2.5 w-10 h-10 rounded-full flex items-center justify-center shadow-[0_6px_18px_rgba(255,77,46,0.4)] active:scale-90 transition-all duration-200 ${
+          className={`absolute bottom-2.5 right-2.5 w-10 h-10 rounded-full flex items-center justify-center shadow-[0_6px_18px_rgba(255,77,46,0.4)] active:scale-90 transition-[opacity,transform] duration-150 ${
             isCurrent
               ? 'bg-[#FF4D2E] text-white opacity-100 translate-y-0'
               : 'bg-[#FF4D2E] text-white opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0'
@@ -101,7 +101,7 @@ export const TrackCard = memo(function TrackCard({
             toggleLike(track);
           }}
           aria-label={liked ? `Unlike ${track.title}` : `Like ${track.title}`}
-          className={`absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center bg-black/60 border border-white/15 active:scale-90 transition-all duration-200 ${
+          className={`absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center bg-black/60 border border-white/15 active:scale-90 transition-[opacity,transform] duration-150 ${
             liked ? 'opacity-100 text-[#FF4D2E]' : 'opacity-0 group-hover:opacity-100 text-white/90 hover:text-white'
           }`}
         >

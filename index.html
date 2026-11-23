@@ -43,11 +43,16 @@
           var perf = localStorage.getItem('audixify_perf_mode');
           if (perf === 'lite') {
             document.documentElement.setAttribute('data-perf', 'lite');
-          } else if (perf !== 'full') {
+          } else if (perf === 'full') {
+            document.documentElement.setAttribute('data-perf', 'full');
+          } else {
             var mem = navigator.deviceMemory;
             var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
             if ((typeof mem === 'number' && mem <= 3) || reduced) {
               document.documentElement.setAttribute('data-perf', 'lite');
+            } else if (coarse || (typeof mem === 'number' && mem <= 8)) {
+              document.documentElement.setAttribute('data-perf', 'smooth');
             }
           }
         } catch (e) {}

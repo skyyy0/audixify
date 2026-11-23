@@ -2,11 +2,13 @@ import { memo, useEffect, useRef, useState } from 'react';
 import {
   Film,
   Heart,
+  Info,
   ListPlus,
   MoreHorizontal,
   Pause,
   Play,
   Plus,
+  Radio,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -52,6 +54,8 @@ export const TrackRow = memo(function TrackRow({
     addTrackToPlaylist,
     createPlaylist,
     showToast,
+    startArtistRadio,
+    setTrackInfoTarget,
   } = usePlayer();
   const { sharedPlaylists, addTrackToSharedPlaylist } = useSharedPlaylistsContext();
 
@@ -297,6 +301,28 @@ export const TrackRow = memo(function TrackRow({
               >
                 <ListPlus className="w-3.5 h-3.5" />
                 <span>Add to Queue</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void startArtistRadio(track);
+                  setMenuOpen(false);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-zinc-800 dark:text-zinc-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors"
+              >
+                <Radio className="w-3.5 h-3.5 text-[#FF4D2E]" />
+                <span>Start Artist Radio</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTrackInfoTarget(track);
+                  setMenuOpen(false);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-zinc-800 dark:text-zinc-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors"
+              >
+                <Info className="w-3.5 h-3.5" />
+                <span>Track Info &amp; Credits</span>
               </button>
 
               {onRemoveFromPlaylist && (

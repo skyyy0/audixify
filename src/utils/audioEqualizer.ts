@@ -112,6 +112,7 @@ export class WebAudioEqualizerEngine {
   private source: MediaElementAudioSourceNode | null = null;
   private preampNode: GainNode | null = null;
   private filters: BiquadFilterNode[] = [];
+  private analyser: AnalyserNode | null = null;
   private attachedEl: HTMLAudioElement | null = null;
   private failed = false;
 
@@ -144,6 +145,9 @@ export class WebAudioEqualizerEngine {
         node.gain.value = 0;
         return node;
       });
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.78;
 
       let prev: AudioNode = source;
       prev.connect(preamp);
@@ -152,12 +156,14 @@ export class WebAudioEqualizerEngine {
         prev.connect(f);
         prev = f;
       }
-      prev.connect(ctx.destination);
+      prev.connect(analyser);
+      analyser.connect(ctx.destination);
 
       this.ctx = ctx;
       this.source = source;
       this.preampNode = preamp;
       this.filters = filters;
+      this.analyser = analyser;
       this.attachedEl = audioEl;
 
       if (ctx.state === 'suspended') {
@@ -184,6 +190,16 @@ export class WebAudioEqualizerEngine {
     });
   }
 
+  public hasAnalyser(): boolean {
+    return Boolean(this.analyser && this.ctx && this.ctx.state === 'running');
+  }
+
+  public getFrequencyData(target: Uint8Array<ArrayBuffer>): boolean {
+    if (!this.analyser || !this.ctx || this.ctx.state !== 'running') return false;
+    this.analyser.getByteFrequencyData(target);
+    return true;
+  }
+
   public resume(): void {
     if (this.ctx && this.ctx.state === 'suspended') {
       void this.ctx.resume().catch(() => {});
@@ -195,6 +211,7 @@ export class WebAudioEqualizerEngine {
       this.source?.disconnect();
       this.preampNode?.disconnect();
       this.filters.forEach((f) => f.disconnect());
+      this.analyser?.disconnect();
       if (this.ctx && this.ctx.state !== 'closed') {
         void this.ctx.close().catch(() => {});
       }
@@ -203,6 +220,7 @@ export class WebAudioEqualizerEngine {
     this.source = null;
     this.preampNode = null;
     this.filters = [];
+    this.analyser = null;
     this.attachedEl = null;
   }
 }
