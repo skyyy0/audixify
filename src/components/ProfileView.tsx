@@ -655,10 +655,10 @@ export function ProfileView({
                 <Cpu className="w-4 h-4 text-[#FF4D2E]" />
                 <div>
                   <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                    Performance &amp; Low-RAM Mode
+                    Performance &amp; Visual Quality
                   </div>
                   <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Auto detects 2GB–3GB RAM devices to keep scrolling locked at 60fps
+                    Automatically adapts visual effects for fluid scrolling and battery efficiency
                   </div>
                 </div>
               </div>
