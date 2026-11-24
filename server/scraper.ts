@@ -538,34 +538,52 @@ interface SoundCloudTrack {
 }
 
 let cachedScClientId: { value: string; expiresAt: number } | null = null;
+let inflightScClientId: Promise<string> | null = null;
 
 async function getSoundCloudClientId(forceRefresh = false): Promise<string> {
   if (!forceRefresh && cachedScClientId && cachedScClientId.expiresAt > Date.now()) {
     return cachedScClientId.value;
   }
-
-  const html = await fetchText('https://soundcloud.com', undefined, 8000);
-  const scriptMatches = Array.from(html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^\s"']+\.js/g)).map(
-    (m) => m[0],
-  );
-
-  for (const scriptUrl of scriptMatches.slice(-6).reverse()) {
-    try {
-      const js = await fetchText(scriptUrl, undefined, 7000);
-      const match = js.match(/client_id:"([a-zA-Z0-9]{32})"/);
-      if (match?.[1]) {
-        cachedScClientId = {
-          value: match[1],
-          expiresAt: Date.now() + 4 * 60 * 60 * 1000,
-        };
-        return match[1];
-      }
-    } catch {
-      // Try next bundle
-    }
+  if (!forceRefresh && inflightScClientId) {
+    return inflightScClientId;
   }
 
-  throw new Error('Unable to extract SoundCloud client_id');
+  const task = (async () => {
+    const html = await fetchText('https://soundcloud.com', undefined, 5000);
+    const scriptMatches = Array.from(
+      html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^\s"']+\.js/g),
+    ).map((m) => m[0]);
+
+    const targets = scriptMatches.slice(-6).reverse();
+    if (targets.length === 0) {
+      throw new Error('No SoundCloud script bundles found');
+    }
+
+    const extractFromScript = async (scriptUrl: string): Promise<string> => {
+      const js = await fetchText(scriptUrl, undefined, 4500);
+      const match =
+        js.match(/client_id\s*:\s*"([a-zA-Z0-9]{32})"/) ||
+        js.match(/"client_id"\s*:\s*"([a-zA-Z0-9]{32})"/);
+      if (match?.[1]) return match[1];
+      throw new Error('client_id not in bundle');
+    };
+
+    try {
+      const cid = await Promise.any(targets.map(extractFromScript));
+      cachedScClientId = {
+        value: cid,
+        expiresAt: Date.now() + 4 * 60 * 60 * 1000,
+      };
+      return cid;
+    } catch {
+      throw new Error('Unable to extract SoundCloud client_id');
+    }
+  })().finally(() => {
+    inflightScClientId = null;
+  });
+
+  inflightScClientId = task;
+  return task;
 }
 
 async function searchSoundCloudRaw(query: string, limit = 10): Promise<SoundCloudTrack[]> {
@@ -574,7 +592,7 @@ async function searchSoundCloudRaw(query: string, limit = 10): Promise<SoundClou
     fetchJson<{ collection?: SoundCloudTrack[] }>(
       `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${clientId}&limit=${limit}`,
       undefined,
-      7500,
+      5000,
     );
 
   try {
@@ -717,8 +735,26 @@ const UNWANTED_MODIFIER_WORDS = [
   'tiktok',
 ];
 
+function isPlayableScTranscoding(tr: SoundCloudTranscoding): boolean {
+  const proto = (tr.format?.protocol || '').toLowerCase();
+  const urlLower = (tr.url || '').toLowerCase();
+  if (!urlLower) return false;
+  if (
+    proto.includes('encrypt') ||
+    proto.includes('cbc') ||
+    proto.includes('ctr') ||
+    proto.includes('drm') ||
+    urlLower.includes('/cbcs/') ||
+    urlLower.includes('encrypted')
+  ) {
+    return false;
+  }
+  return proto === 'progressive' || proto === 'hls';
+}
+
 function scoreSoundCloudCandidate(cand: SoundCloudTrack, title: string, artist: string, expectedDur: number): number {
-  if (!cand.media?.transcodings?.length || cand.policy === 'BLOCK') return -1000;
+  const transcodings = cand.media?.transcodings ?? [];
+  if (!transcodings.some(isPlayableScTranscoding) || cand.policy === 'BLOCK') return -1000;
 
   let score = 0;
   const candTitle = normalizeText(cand.title || '');
@@ -772,8 +808,8 @@ function scoreSoundCloudCandidate(cand: SoundCloudTrack, title: string, artist: 
     }
   }
 
-  // Slight preference for tracks with non-snipped progressive or AAC HLS transcoding
-  const hasFullTranscoding = cand.media.transcodings.some((tr) => !tr.snipped);
+  // Slight preference for tracks with non-snipped playable progressive or AAC HLS transcoding
+  const hasFullTranscoding = transcodings.some((tr) => !tr.snipped && isPlayableScTranscoding(tr));
   if (hasFullTranscoding) score += 15;
 
   return score;
@@ -781,8 +817,11 @@ function scoreSoundCloudCandidate(cand: SoundCloudTrack, title: string, artist: 
 
 async function resolveScTranscoding(track: SoundCloudTrack): Promise<StreamResolution | null> {
   const cid = await getSoundCloudClientId(false);
-  const transcodings = (track.media?.transcodings ?? []).filter((tr) => !tr.snipped);
-  const candidates = transcodings.length ? transcodings : track.media?.transcodings ?? [];
+  const playable = (track.media?.transcodings ?? []).filter(isPlayableScTranscoding);
+  if (playable.length === 0) return null;
+
+  const nonSnipped = playable.filter((tr) => !tr.snipped);
+  const candidates = nonSnipped.length ? nonSnipped : playable;
 
   // Prefer progressive MP3/MP4 first, then HLS AAC (audio/mp4), then HLS MP3 (audio/mpegurl)
   const ordered = [...candidates].sort((a, b) => {
@@ -798,11 +837,24 @@ async function resolveScTranscoding(track: SoundCloudTrack): Promise<StreamResol
   for (const tr of ordered) {
     try {
       const sep = tr.url.includes('?') ? '&' : '?';
-      const resolved = await fetchJson<{ url?: string }>(`${tr.url}${sep}client_id=${cid}`, undefined, 6000);
+      const resolved = await fetchJson<{ url?: string }>(`${tr.url}${sep}client_id=${cid}`, undefined, 4500);
       if (!resolved.url || !isValidExternalMediaUrl(resolved.url)) continue;
 
-      const isHls = tr.format?.protocol === 'hls';
-      const isFull = track.policy !== 'SNIP' && !tr.snipped && (track.duration || 0) > 40000;
+      const resolvedLower = resolved.url.toLowerCase();
+      if (
+        resolvedLower.includes('/cbcs/') ||
+        resolvedLower.includes('/ctr/') ||
+        resolvedLower.includes('skd://')
+      ) {
+        continue;
+      }
+
+      const isHls = tr.format?.protocol === 'hls' || resolvedLower.includes('.m3u8');
+      const isFull =
+        track.policy !== 'SNIP' &&
+        !tr.snipped &&
+        !resolvedLower.includes('/preview/') &&
+        (track.duration || 0) > 40000;
 
       if (isHls && !HAS_FFMPEG) {
         return {
@@ -838,9 +890,16 @@ export async function resolveAudioStream(params: {
   previewUrl?: string;
 }): Promise<StreamResolution> {
   const { title, artist, durationSec = 0, scTrackId, previewUrl } = params;
-  const cacheKey = `stream:${scTrackId || ''}:${normalizeText(title)}:${normalizeText(artist)}`;
+  const cacheKey = `stream:v2:${scTrackId || ''}:${normalizeText(title)}:${normalizeText(artist)}`;
 
   return withCache(cacheKey, 5 * 60 * 1000, async () => {
+    const cleanArtist = artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || artist;
+    const cleanTitle = title
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() || title;
+
     // 1. Direct SoundCloud track ID if known
     if (scTrackId) {
       try {
@@ -848,7 +907,7 @@ export async function resolveAudioStream(params: {
         const scTrack = await fetchJson<SoundCloudTrack>(
           `https://api-v2.soundcloud.com/tracks/${scTrackId}?client_id=${cid}`,
           undefined,
-          6500,
+          4500,
         );
         const res = await resolveScTranscoding(scTrack);
         if (res) return res;
@@ -857,19 +916,25 @@ export async function resolveAudioStream(params: {
       }
     }
 
-    // 2. SoundCloud search & smart scoring
+    // 2. SoundCloud search & smart scoring (clean non-DRM candidates)
     try {
-      const cleanArtist = artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || artist;
-      const results = await searchSoundCloudRaw(`${cleanArtist} ${title}`, 12);
-      const ranked = results
-        .map((cand) => ({ cand, score: scoreSoundCloudCandidate(cand, title, artist, durationSec) }))
-        .filter((x) => x.score > 20)
-        .sort((a, b) => b.score - a.score);
+      const queries = [`${cleanArtist} ${title}`];
+      if (cleanTitle.toLowerCase() !== title.toLowerCase()) {
+        queries.push(`${cleanArtist} ${cleanTitle}`);
+      }
 
-      for (const item of ranked.slice(0, 3)) {
-        const res = await resolveScTranscoding(item.cand);
-        if (res && res.fullLength) {
-          return res;
+      for (const q of queries) {
+        const results = await searchSoundCloudRaw(q, 14);
+        const ranked = results
+          .map((cand) => ({ cand, score: scoreSoundCloudCandidate(cand, title, artist, durationSec) }))
+          .filter((x) => x.score > 15)
+          .sort((a, b) => b.score - a.score);
+
+        for (const item of ranked.slice(0, 4)) {
+          const res = await resolveScTranscoding(item.cand);
+          if (res && res.fullLength) {
+            return res;
+          }
         }
       }
     } catch {
@@ -877,14 +942,23 @@ export async function resolveAudioStream(params: {
     }
 
     // 3. JioSaavn full-track fallback
-    const saavnRes = await resolveJioSaavnStream(title, artist, durationSec);
+    const saavnRes = await resolveJioSaavnStream(cleanTitle, cleanArtist, durationSec);
     if (saavnRes) return saavnRes;
 
-    // 4. Verified preview fallback (provided or fetched from iTunes)
-    let fallbackPreview = previewUrl;
+    // 4. Verified preview fallback (provided or fetched from iTunes & Deezer in parallel)
+    let fallbackPreview = previewUrl && isValidExternalMediaUrl(previewUrl) ? previewUrl : undefined;
     if (!fallbackPreview) {
-      const itunesFallback = await scrapeItunesSearch(`${artist} ${title}`, 'id', 'GLOBAL', 3).catch(() => []);
-      fallbackPreview = itunesFallback.find((t) => t.previewUrl)?.previewUrl;
+      const [itunesId, itunesUs, dz] = await Promise.allSettled([
+        scrapeItunesSearch(`${cleanArtist} ${cleanTitle}`, 'id', 'GLOBAL', 4),
+        scrapeItunesSearch(`${cleanArtist} ${cleanTitle}`, 'us', 'GLOBAL', 4),
+        scrapeDeezerSearch(`${cleanArtist} ${cleanTitle}`, 'GLOBAL', 4),
+      ]);
+      const pool = [
+        ...(itunesId.status === 'fulfilled' ? itunesId.value : []),
+        ...(itunesUs.status === 'fulfilled' ? itunesUs.value : []),
+        ...(dz.status === 'fulfilled' ? dz.value : []),
+      ];
+      fallbackPreview = pool.find((t) => t.previewUrl && isValidExternalMediaUrl(t.previewUrl))?.previewUrl;
     }
 
     if (fallbackPreview && isValidExternalMediaUrl(fallbackPreview)) {

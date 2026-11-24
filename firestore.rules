@@ -46,6 +46,9 @@ service cloud.firestore {
       return data.keys().hasAll(['uid', 'username', 'displayName', 'isDeveloper', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly([
           'uid',
+          'email',
+          'authProvider',
+          'role',
           'username',
           'displayName',
           'bio',
@@ -68,11 +71,15 @@ service cloud.firestore {
           'recoverableStreak',
           'recoveryUsedTier30',
           'recoveryUsedTier7',
+          'lastSeenAt',
           'createdAt',
           'updatedAt'
         ])
         && data.uid is string
         && data.uid == userId
+        && (!('email' in data) || (data.email is string && data.email.size() <= 160))
+        && (!('authProvider' in data) || (data.authProvider is string && data.authProvider in ['google', 'other']))
+        && (!('role' in data) || (data.role is string && data.role in ['listener', 'vip', 'moderator', 'developer']))
         && data.username is string
         && data.username.size() >= 3
         && data.username.size() <= 24
@@ -83,7 +90,6 @@ service cloud.firestore {
         && (!('bio' in data) || (data.bio is string && data.bio.size() <= 240))
         && (!('avatarDataUrl' in data) || (data.avatarDataUrl is string && data.avatarDataUrl.size() <= 120000))
         && data.isDeveloper is bool
-        && (!data.isDeveloper || isAdmin())
         && (!('perfMode' in data) || (data.perfMode is string && data.perfMode in ['auto', 'lite', 'full']))
         && (!('audioQuality' in data) || (data.audioQuality is string && data.audioQuality in ['auto', 'high', 'saver']))
         && (!('lyricsSize' in data) || (data.lyricsSize is string && data.lyricsSize in ['compact', 'standard', 'large']))
@@ -101,6 +107,7 @@ service cloud.firestore {
         && (!('recoverableStreak' in data) || (data.recoverableStreak is int && data.recoverableStreak >= 0 && data.recoverableStreak <= 3650))
         && (!('recoveryUsedTier30' in data) || (data.recoveryUsedTier30 is int && data.recoveryUsedTier30 >= 0 && data.recoveryUsedTier30 <= 3))
         && (!('recoveryUsedTier7' in data) || (data.recoveryUsedTier7 is int && data.recoveryUsedTier7 >= 0 && data.recoveryUsedTier7 <= 1))
+        && (!('lastSeenAt' in data) || data.lastSeenAt is timestamp)
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -466,6 +473,9 @@ service cloud.firestore {
       allow create: if isValidId(userId)
         && isOwner(userId)
         && isValidUserProfile(incoming(), userId)
+        && (!incoming().isDeveloper || isAdmin())
+        && (!('role' in incoming()) || incoming().role == 'listener' || isAdmin())
+        && (!('email' in incoming()) || incoming().email == request.auth.token.email || isAdmin())
         && (!('streakCount' in incoming()) || incoming().streakCount <= 1)
         && (!('longestStreak' in incoming()) || incoming().longestStreak <= 1)
         && (!('badges' in incoming()) || incoming().badges.size() == 0)
@@ -476,6 +486,7 @@ service cloud.firestore {
         && (!('recoverableStreak' in incoming()) || incoming().recoverableStreak == 0)
         && (!('recoveryUsedTier30' in incoming()) || incoming().recoveryUsedTier30 == 0)
         && (!('recoveryUsedTier7' in incoming()) || incoming().recoveryUsedTier7 == 0)
+        && (!('lastSeenAt' in incoming()) || incoming().lastSeenAt == request.time)
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
 
@@ -489,9 +500,14 @@ service cloud.firestore {
           isAdmin()
           || (
             incoming().isDeveloper == existing().isDeveloper
+            && (!('role' in incoming()) || (('role' in existing()) ? incoming().role == existing().role : incoming().role == 'listener'))
+            && (!('email' in incoming()) || incoming().email == request.auth.token.email || (('email' in existing()) && incoming().email == existing().email))
             && (
-              // Action 1: Profile & preferences edit
+              // Action 1: Profile, preferences, or session metadata sync
               incoming().diff(existing()).affectedKeys().hasOnly([
+                'email',
+                'authProvider',
+                'role',
                 'username',
                 'displayName',
                 'bio',
@@ -502,11 +518,15 @@ service cloud.firestore {
                 'defaultRegion',
                 'autoplay',
                 'theme',
+                'lastSeenAt',
                 'updatedAt'
               ])
               // Action 2: Daily check-in streak progression
               || (
                 incoming().diff(existing()).affectedKeys().hasOnly([
+                  'email',
+                  'authProvider',
+                  'lastSeenAt',
                   'streakCount',
                   'longestStreak',
                   'lastCheckInDate',

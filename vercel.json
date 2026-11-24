@@ -10,7 +10,7 @@
   },
   "rewrites": [
     {
-      "source": "/((?!api/|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest|sw\\.js|workbox-.*\\.js|registerSW\\.js|icon\\.svg|pwa-.*\\.png|apple-touch-icon\\.png).*)",
+      "source": "/((?!api/|__/|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest|sw\\.js|workbox-.*\\.js|registerSW\\.js|icon\\.svg|pwa-.*\\.png|apple-touch-icon\\.png).*)",
       "destination": "/index.html"
     }
   ],

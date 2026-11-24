@@ -108,3 +108,62 @@ export function GoldCrownBadge({ showLabel = false, size = 'sm' }: BadgeProps) {
   );
 }
 
+export function RoleBadge({
+  role,
+  showLabel = true,
+  size = 'sm',
+}: {
+  role?: 'listener' | 'vip' | 'moderator' | 'developer';
+  showLabel?: boolean;
+  size?: 'sm' | 'md';
+}) {
+  if (!role || role === 'listener' || role === 'developer') return null;
+  const iconSize = size === 'md' ? 'w-4 h-4' : 'w-3.5 h-3.5';
+
+  if (role === 'vip') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 shrink-0"
+        title="VIP Audixify Member"
+      >
+        <svg viewBox="0 0 24 24" fill="none" aria-label="VIP Badge" className={iconSize}>
+          <path
+            d="M12 2.5L14.9 8.4L21.4 9.3L16.7 13.9L17.8 20.4L12 17.3L6.2 20.4L7.3 13.9L2.6 9.3L9.1 8.4L12 2.5Z"
+            fill="#8B5CF6"
+          />
+        </svg>
+        {showLabel && (
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-violet-500/15 text-violet-600 dark:text-violet-300 border border-violet-500/25">
+            VIP
+          </span>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 shrink-0"
+      title="Audixify Community Moderator"
+    >
+      <svg viewBox="0 0 24 24" fill="none" aria-label="Moderator Badge" className={iconSize}>
+        <path
+          d="M12 2L4 5.5V11.5C4 16.5 7.4 21 12 22.5C16.6 21 20 16.5 20 11.5V5.5L12 2Z"
+          fill="#0EA5E9"
+        />
+        <path
+          d="M9 12L11 14L15.2 9.8"
+          stroke="#FFFFFF"
+          strokeWidth="2.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      {showLabel && (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-sky-500/15 text-sky-600 dark:text-sky-300 border border-sky-500/25">
+          Moderator
+        </span>
+      )}
+    </span>
+  );
+}

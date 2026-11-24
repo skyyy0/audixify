@@ -55,15 +55,21 @@ export default defineConfig(() => {
           clientsClaim: true,
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//, /^\/manifest\.webmanifest$/, /^\/robots\.txt$/],
+          navigateFallbackDenylist: [/^\/api\//, /^\/__\//, /^\/manifest\.webmanifest$/, /^\/robots\.txt$/],
           globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
           runtimeCaching: [
             {
-              urlPattern: ({url}) => url.pathname.startsWith('/api/'),
+              urlPattern: ({url}) => url.pathname.startsWith('/api/') || url.pathname.startsWith('/__/'),
               handler: 'NetworkOnly',
             },
             {
-              urlPattern: ({url}) => url.hostname.includes('firestore.googleapis.com') || url.hostname.includes('identitytoolkit.googleapis.com'),
+              urlPattern: ({url}) =>
+                url.hostname.includes('firestore.googleapis.com') ||
+                url.hostname.includes('identitytoolkit.googleapis.com') ||
+                url.hostname.includes('securetoken.googleapis.com') ||
+                url.hostname.includes('www.googleapis.com') ||
+                url.hostname.includes('apis.google.com') ||
+                url.hostname.endsWith('.firebaseapp.com'),
               handler: 'NetworkOnly',
             },
             {

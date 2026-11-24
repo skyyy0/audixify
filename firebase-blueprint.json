@@ -12,6 +12,22 @@
           "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "Firebase Authentication UID matching the document ID."
         },
+        "email": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 160,
+          "description": "Verified Google account email visible only to account owner and developer admin."
+        },
+        "authProvider": {
+          "type": "string",
+          "enum": ["google", "other"],
+          "description": "Authentication provider used for registration."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["listener", "vip", "moderator", "developer"],
+          "description": "Community and access role managed by developer admin."
+        },
         "username": {
           "type": "string",
           "minLength": 3,
@@ -39,7 +55,7 @@
         },
         "isDeveloper": {
           "type": "boolean",
-          "description": "True only for verified developer email sekay77771@gmail.com."
+          "description": "Developer privilege flag managed strictly by verified developer admin."
         },
         "perfMode": {
           "type": "string",
@@ -125,6 +141,11 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Number of streak recoveries used for streaks 7-29 days (max 1)."
+        },
+        "lastSeenAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of most recent active session."
         },
         "createdAt": {
           "type": "string",

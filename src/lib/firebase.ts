@@ -1,5 +1,15 @@
 import { initializeApp } from 'firebase/app';
-import { GoogleAuthProvider, getAuth, type User } from 'firebase/auth';
+import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  getAuth,
+  GoogleAuthProvider,
+  indexedDBLocalPersistence,
+  initializeAuth,
+  setPersistence,
+  type Auth,
+  type User,
+} from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -7,7 +17,31 @@ export const DEVELOPER_EMAIL = 'sekay77771@gmail.com';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+
+function createPersistentAuth(): Auth {
+  try {
+    return initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    return getAuth(app);
+  }
+}
+
+export const auth = createPersistentAuth();
+
+export async function ensureAuthPersistence(): Promise<void> {
+  try {
+    await setPersistence(auth, indexedDBLocalPersistence);
+  } catch {
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+    } catch {
+      // Best-effort persistence setup; Firebase continues with active persistence layer
+    }
+  }
+}
 
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });

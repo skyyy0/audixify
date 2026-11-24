@@ -116,7 +116,13 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
     if (idx <= 0) continue;
     const k = part.slice(0, idx).trim();
     const v = part.slice(idx + 1).trim();
-    if (k) out[k] = decodeURIComponent(v);
+    if (k) {
+      try {
+        out[k] = decodeURIComponent(v);
+      } catch {
+        out[k] = v;
+      }
+    }
   }
   return out;
 }
@@ -200,12 +206,14 @@ function isAllowedHostOrOrigin(req: Request): boolean {
     return false;
   }
 
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').toLowerCase();
-  const origin = String(req.headers.origin || '').toLowerCase();
-  if (origin && host) {
+  const normalizeHost = (h: string) => h.replace(/:(80|443)$/, '').toLowerCase();
+  const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  const host = normalizeHost(rawHost.split(',')[0].trim());
+  const origin = String(req.headers.origin || '').trim();
+  if (origin && origin !== 'null' && host) {
     try {
       const parsed = new URL(origin);
-      if (parsed.host.toLowerCase() !== host) {
+      if (normalizeHost(parsed.host) !== host) {
         return false;
       }
     } catch {
@@ -213,11 +221,11 @@ function isAllowedHostOrOrigin(req: Request): boolean {
     }
   }
 
-  const referer = String(req.headers.referer || '').toLowerCase();
-  if (!origin && referer && host) {
+  const referer = String(req.headers.referer || '').trim();
+  if ((!origin || origin === 'null') && referer && host) {
     try {
       const parsed = new URL(referer);
-      if (parsed.host.toLowerCase() !== host) {
+      if (normalizeHost(parsed.host) !== host) {
         return false;
       }
     } catch {

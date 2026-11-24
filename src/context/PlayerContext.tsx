@@ -503,15 +503,41 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (track.scTrackId) qs.set('scTrackId', String(track.scTrackId));
         if (track.previewUrl) qs.set('previewUrl', track.previewUrl);
 
-        const res = await apiFetch(`/api/stream?${qs.toString()}`);
+        let res = await apiFetch(`/api/stream?${qs.toString()}`);
         if (seq !== requestSeqRef.current) return;
 
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || 'Unable to stream this track');
+        if (!res.ok && (res.status >= 500 || res.status === 404 || res.status === 429)) {
+          await new Promise((r) => setTimeout(r, 320));
+          if (seq !== requestSeqRef.current) return;
+          res = await apiFetch(`/api/stream?${qs.toString()}`);
+          if (seq !== requestSeqRef.current) return;
         }
 
-        const resolved = (await res.json()) as StreamResolution;
+        let resolved: StreamResolution;
+        if (!res.ok) {
+          const rawText = await res.text().catch(() => '');
+          let errMsg = '';
+          try {
+            const errBody = JSON.parse(rawText) as { error?: string };
+            errMsg = errBody.error || '';
+          } catch {
+            errMsg = '';
+          }
+
+          if (track.previewUrl) {
+            resolved = {
+              streamUrl: `/api/audio-proxy?url=${encodeURIComponent(track.previewUrl)}`,
+              mode: 'audio',
+              source: 'preview',
+              fullLength: false,
+              durationSec: 30,
+            };
+          } else {
+            throw new Error(errMsg || `Unable to stream this track (HTTP ${res.status})`);
+          }
+        } else {
+          resolved = (await res.json()) as StreamResolution;
+        }
         if (seq !== requestSeqRef.current) return;
 
         setStreamInfo(resolved);

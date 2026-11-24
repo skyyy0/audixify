@@ -581,6 +581,10 @@ export function createApiApp(): express.Express {
 
       if (isPlaylist) {
         const text = await upstream.text();
+        if (text.includes('skd://') || text.includes('METHOD=SAMPLE-AES')) {
+          res.status(422).send('Encrypted DRM stream unsupported');
+          return;
+        }
         const rewritten = text
           .split('\n')
           .map((line) => {
@@ -754,6 +758,60 @@ export function createApiApp(): express.Express {
       }
     }
   });
+
+  const visitorSessions = new Map<string, { mode: 'guest' | 'gmail'; lastSeen: number }>();
+  const VISITOR_WINDOW_MS = 30 * 60_000;
+
+  app.use('/api', (req, _res, next) => {
+    const sid = String(req.headers['x-audixify-sid'] || '').trim().slice(0, 64);
+    const authMode = req.headers['x-audixify-auth'] === 'gmail' ? 'gmail' : 'guest';
+    if (sid && sid !== 'ssr') {
+      const now = Date.now();
+      visitorSessions.set(sid, { mode: authMode, lastSeen: now });
+      if (visitorSessions.size > 5000) {
+        for (const [k, v] of visitorSessions) {
+          if (now - v.lastSeen > VISITOR_WINDOW_MS) visitorSessions.delete(k);
+        }
+      }
+    }
+    next();
+  });
+
+  app.get('/api/visitor-telemetry', antiBotApiGuard, (_req, res) => {
+    const now = Date.now();
+    let activeGuests = 0;
+    let activeSignedIn = 0;
+    for (const [k, v] of visitorSessions) {
+      if (now - v.lastSeen > VISITOR_WINDOW_MS) {
+        visitorSessions.delete(k);
+        continue;
+      }
+      if (v.mode === 'gmail') activeSignedIn += 1;
+      else activeGuests += 1;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      activeGuests,
+      activeSignedIn,
+      windowMinutes: 30,
+    });
+  });
+
+  app.use(
+    '/api',
+    (
+      err: unknown,
+      _req: express.Request,
+      res: express.Response,
+      _next: express.NextFunction,
+    ) => {
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Internal server error',
+        });
+      }
+    },
+  );
 
   return app;
 }

@@ -1,13 +1,19 @@
 import {
   onAuthStateChanged,
+  onIdTokenChanged,
   signInWithPopup,
   signOut,
   type User,
 } from 'firebase/auth';
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
+  limit,
   onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -25,6 +31,7 @@ import {
 import {
   auth,
   db,
+  ensureAuthPersistence,
   googleProvider,
   handleFirestoreError,
   isDeveloperUser,
@@ -36,8 +43,10 @@ import {
   type AppPreferences,
   type BadgeId,
   type UserProfile,
+  type UserRole,
 } from '../types/account';
 import type { ArtistSummary, Track, UserPlaylist } from '../types/music';
+import { setVisitorAuthMode } from '../utils/apiFetch';
 
 const DEFAULT_PREFERENCES: AppPreferences = {
   perfMode: 'auto',
@@ -183,9 +192,72 @@ interface AuthContextValue {
     followedArtists: ArtistSummary[];
     playlists: UserPlaylist[];
   } | null>;
+  listRegisteredUsers: () => Promise<UserProfile[]>;
+  adminUpdateUserAccess: (
+    targetUid: string,
+    patch: {
+      role?: UserRole;
+      greenBadge?: boolean;
+      goldFrame?: boolean;
+    },
+  ) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function normalizeRole(raw: unknown, devFallback: boolean): UserRole {
+  if (raw === 'vip' || raw === 'moderator' || raw === 'developer' || raw === 'listener') {
+    return raw;
+  }
+  return devFallback ? 'developer' : 'listener';
+}
+
+function mapDocToUserProfile(
+  d: Record<string, unknown>,
+  fallbackUid: string,
+  fallbackUser?: User | null,
+): UserProfile {
+  const dev = Boolean(d.isDeveloper) || isDeveloperUser(fallbackUser);
+  const role = normalizeRole(d.role, dev);
+  return {
+    uid: String(d.uid || fallbackUid),
+    email: typeof d.email === 'string' ? d.email : fallbackUser?.email || undefined,
+    authProvider: d.authProvider === 'other' ? 'other' : 'google',
+    role,
+    username: String(d.username || (fallbackUser ? buildInitialUsername(fallbackUser) : 'listener')),
+    displayName: String(d.displayName || fallbackUser?.displayName || 'Listener'),
+    bio: String(d.bio || ''),
+    avatarDataUrl: String(d.avatarDataUrl || fallbackUser?.photoURL || ''),
+    isDeveloper: dev || role === 'developer',
+    perfMode: d.perfMode === 'lite' || d.perfMode === 'full' ? d.perfMode : 'auto',
+    audioQuality:
+      d.audioQuality === 'high' || d.audioQuality === 'saver' ? d.audioQuality : 'auto',
+    lyricsSize:
+      d.lyricsSize === 'compact' || d.lyricsSize === 'large' ? d.lyricsSize : 'standard',
+    defaultRegion:
+      d.defaultRegion === 'id' ||
+      d.defaultRegion === 'asia' ||
+      d.defaultRegion === 'global'
+        ? d.defaultRegion
+        : 'all',
+    autoplay: typeof d.autoplay === 'boolean' ? d.autoplay : true,
+    theme: d.theme === 'light' ? 'light' : 'dark',
+    streakCount: typeof d.streakCount === 'number' ? d.streakCount : 1,
+    longestStreak: typeof d.longestStreak === 'number' ? d.longestStreak : 1,
+    lastCheckInDate: typeof d.lastCheckInDate === 'string' ? d.lastCheckInDate : '',
+    badges: Array.isArray(d.badges) ? (d.badges as BadgeId[]) : [],
+    greenBadgeUnlocked: Boolean(d.greenBadgeUnlocked),
+    greenBadgeEnabled: Boolean(d.greenBadgeEnabled),
+    goldFrameUnlocked: Boolean(d.goldFrameUnlocked),
+    goldFrameEnabled: Boolean(d.goldFrameEnabled),
+    recoverableStreak: typeof d.recoverableStreak === 'number' ? d.recoverableStreak : 0,
+    recoveryUsedTier30: typeof d.recoveryUsedTier30 === 'number' ? d.recoveryUsedTier30 : 0,
+    recoveryUsedTier7: typeof d.recoveryUsedTier7 === 'number' ? d.recoveryUsedTier7 : 0,
+    lastSeenAt: d.lastSeenAt,
+    createdAt: d.createdAt,
+    updatedAt: d.updatedAt,
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -197,6 +269,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [streakBannerMessage, setStreakBannerMessage] = useState<string | null>(null);
   const checkedInDateRef = useRef<string>('');
+  const syncedSessionUidRef = useRef<string>('');
 
   const dismissStreakBanner = useCallback(() => setStreakBannerMessage(null), []);
 
@@ -208,16 +281,76 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [preferences]);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (nextUser) => {
+    let mounted = true;
+
+    void ensureAuthPersistence();
+    if (typeof auth.authStateReady === 'function') {
+      void auth.authStateReady().then(() => {
+        if (!mounted) return;
+        const resolved = auth.currentUser;
+        setUser(resolved);
+        setVisitorAuthMode(resolved ? 'gmail' : 'guest');
+        setAuthReady(true);
+      });
+    }
+
+    const unsubAuth = onAuthStateChanged(auth, (nextUser) => {
+      if (!mounted) return;
       setUser(nextUser);
+      setVisitorAuthMode(nextUser ? 'gmail' : 'guest');
       setAuthReady(true);
       if (!nextUser) {
         setProfile(null);
         setProfileLoading(false);
         checkedInDateRef.current = '';
+        syncedSessionUidRef.current = '';
       }
     });
-    return () => unsub();
+
+    const unsubToken = onIdTokenChanged(auth, (nextUser) => {
+      if (!mounted || !nextUser) return;
+      setUser(nextUser);
+      setVisitorAuthMode('gmail');
+    });
+
+    const keepSessionAlive = async () => {
+      const current = auth.currentUser;
+      if (!current) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      try {
+        const result = await current.getIdTokenResult(false);
+        const expiresAtMs = Date.parse(result.expirationTime || '');
+        if (!Number.isFinite(expiresAtMs) || expiresAtMs - Date.now() < 15 * 60_000) {
+          await current.getIdToken(true);
+        }
+      } catch {
+        // Never sign out on transient network/wake-up failures
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void keepSessionAlive();
+      }
+    };
+    const handleOnline = () => {
+      void keepSessionAlive();
+    };
+    const refreshTimer = window.setInterval(() => {
+      void keepSessionAlive();
+    }, 35 * 60_000);
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      mounted = false;
+      unsubAuth();
+      unsubToken();
+      window.clearInterval(refreshTimer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
 
   // Sync or bootstrap Firestore user profile + automatic Daily Streak check-in
@@ -235,6 +368,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const dev = isDeveloperUser(user);
         const today = getLocalDateKey();
         const yesterday = getYesterdayDateKey();
+        const safeEmail = (user.email || '').trim().slice(0, 160);
+        const providerId = user.providerData?.[0]?.providerId || 'google.com';
+        const authProvider = providerId.includes('google') ? 'google' : 'other';
 
         if (!snap.exists()) {
           const currentTheme =
@@ -249,6 +385,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           await setDoc(docRef, {
             uid: user.uid,
+            email: safeEmail,
+            authProvider,
+            role: dev ? 'developer' : 'listener',
             username: buildInitialUsername(user),
             displayName: initialName || 'Listener',
             bio: dev ? 'Creator & Developer of Audixify' : '',
@@ -271,15 +410,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             recoverableStreak: 0,
             recoveryUsedTier30: 0,
             recoveryUsedTier7: 0,
+            lastSeenAt: serverTimestamp(),
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
           checkedInDateRef.current = today;
+          syncedSessionUidRef.current = user.uid;
         } else {
           const data = snap.data() as Partial<UserProfile>;
-          if (Boolean(data.isDeveloper) !== dev) {
+          const metadataPatch: Record<string, unknown> = {};
+          if (safeEmail && data.email !== safeEmail) {
+            metadataPatch.email = safeEmail;
+          }
+          if (!data.authProvider) {
+            metadataPatch.authProvider = authProvider;
+          }
+          if (!data.role) {
+            metadataPatch.role = dev ? 'developer' : 'listener';
+          }
+          if (dev && !data.isDeveloper) {
+            metadataPatch.isDeveloper = true;
+            metadataPatch.role = 'developer';
+          }
+          if (syncedSessionUidRef.current !== user.uid || Object.keys(metadataPatch).length > 0) {
+            syncedSessionUidRef.current = user.uid;
             await updateDoc(docRef, {
-              isDeveloper: dev,
+              ...metadataPatch,
+              lastSeenAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             });
           }
@@ -364,43 +521,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!active) return;
           if (snapshot.exists()) {
             const d = snapshot.data() as Record<string, unknown>;
-            const nextProfile: UserProfile = {
-              uid: String(d.uid || user.uid),
-              username: String(d.username || buildInitialUsername(user)),
-              displayName: String(d.displayName || user.displayName || 'Listener'),
-              bio: String(d.bio || ''),
-              avatarDataUrl: String(d.avatarDataUrl || user.photoURL || ''),
-              isDeveloper: Boolean(d.isDeveloper) || isDeveloperUser(user),
-              perfMode:
-                d.perfMode === 'lite' || d.perfMode === 'full' ? d.perfMode : 'auto',
-              audioQuality:
-                d.audioQuality === 'high' || d.audioQuality === 'saver'
-                  ? d.audioQuality
-                  : 'auto',
-              lyricsSize:
-                d.lyricsSize === 'compact' || d.lyricsSize === 'large'
-                  ? d.lyricsSize
-                  : 'standard',
-              defaultRegion:
-                d.defaultRegion === 'id' ||
-                d.defaultRegion === 'asia' ||
-                d.defaultRegion === 'global'
-                  ? d.defaultRegion
-                  : 'all',
-              autoplay: typeof d.autoplay === 'boolean' ? d.autoplay : true,
-              theme: d.theme === 'light' ? 'light' : 'dark',
-              streakCount: typeof d.streakCount === 'number' ? d.streakCount : 1,
-              longestStreak: typeof d.longestStreak === 'number' ? d.longestStreak : 1,
-              lastCheckInDate: typeof d.lastCheckInDate === 'string' ? d.lastCheckInDate : '',
-              badges: Array.isArray(d.badges) ? (d.badges as BadgeId[]) : [],
-              greenBadgeUnlocked: Boolean(d.greenBadgeUnlocked),
-              greenBadgeEnabled: Boolean(d.greenBadgeEnabled),
-              goldFrameUnlocked: Boolean(d.goldFrameUnlocked),
-              goldFrameEnabled: Boolean(d.goldFrameEnabled),
-              recoverableStreak: typeof d.recoverableStreak === 'number' ? d.recoverableStreak : 0,
-              recoveryUsedTier30: typeof d.recoveryUsedTier30 === 'number' ? d.recoveryUsedTier30 : 0,
-              recoveryUsedTier7: typeof d.recoveryUsedTier7 === 'number' ? d.recoveryUsedTier7 : 0,
-            };
+            const nextProfile = mapDocToUserProfile(d, user.uid, user);
             setProfile(nextProfile);
             setPreferences({
               perfMode: nextProfile.perfMode,
@@ -442,6 +563,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSigningIn(true);
     setAuthError(null);
     try {
+      await ensureAuthPersistence();
       await signInWithPopup(auth, googleProvider);
       return true;
     } catch (err) {
@@ -683,8 +805,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const isDeveloper = useMemo(
-    () => isDeveloperUser(user) || Boolean(profile?.isDeveloper),
-    [user, profile?.isDeveloper],
+    () => isDeveloperUser(user) || Boolean(profile?.isDeveloper) || profile?.role === 'developer',
+    [user, profile?.isDeveloper, profile?.role],
+  );
+
+  const listRegisteredUsers = useCallback(async (): Promise<UserProfile[]> => {
+    if (!user || !isDeveloperUser(user)) {
+      throw new Error('Developer authorization required.');
+    }
+    const usersPath = 'users';
+    try {
+      const q = query(collection(db, usersPath), orderBy('updatedAt', 'desc'), limit(100));
+      const snap = await getDocs(q);
+      return snap.docs.map((d) =>
+        mapDocToUserProfile(d.data() as Record<string, unknown>, d.id, null),
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, usersPath);
+    }
+  }, [user]);
+
+  const adminUpdateUserAccess = useCallback(
+    async (
+      targetUid: string,
+      patch: {
+        role?: UserRole;
+        greenBadge?: boolean;
+        goldFrame?: boolean;
+      },
+    ): Promise<void> => {
+      if (!user || !isDeveloperUser(user)) {
+        throw new Error('Developer authorization required.');
+      }
+      const targetPath = `users/${targetUid}`;
+      const updates: Record<string, unknown> = {
+        updatedAt: serverTimestamp(),
+      };
+      if (patch.role !== undefined) {
+        updates.role = patch.role;
+        updates.isDeveloper = patch.role === 'developer';
+      }
+      if (patch.greenBadge !== undefined) {
+        updates.greenBadgeUnlocked = patch.greenBadge;
+        updates.greenBadgeEnabled = patch.greenBadge;
+      }
+      if (patch.goldFrame !== undefined) {
+        updates.goldFrameUnlocked = patch.goldFrame;
+        updates.goldFrameEnabled = patch.goldFrame;
+      }
+      try {
+        await updateDoc(doc(db, 'users', targetUid), updates);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, targetPath);
+      }
+    },
+    [user],
   );
 
   const showGreenCheckmark = useMemo(
@@ -720,6 +895,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       recoverStreak,
       syncLibraryToCloud,
       fetchLibraryFromCloud,
+      listRegisteredUsers,
+      adminUpdateUserAccess,
     }),
     [
       user,
@@ -743,6 +920,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       recoverStreak,
       syncLibraryToCloud,
       fetchLibraryFromCloud,
+      listRegisteredUsers,
+      adminUpdateUserAccess,
     ],
   );
 

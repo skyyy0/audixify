@@ -602,6 +602,7 @@ function AudixifyShell() {
                             onOpenSupportPage={openSupportPage}
                             onOpenShortcuts={() => setShortcutsOpen(true)}
                             onOpenCollageStudio={() => setCollageModalOpen(true)}
+                            onOpenListenTogether={openListenTogetherPage}
                             onOpenTikTokEvent={() => setTiktokEventOpen(true)}
                             pwaState={{
                               isStandalone: pwa.isStandalone,

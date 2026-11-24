@@ -5,6 +5,7 @@ export type AudioQuality = 'auto' | 'high' | 'saver';
 export type LyricsSize = 'compact' | 'standard' | 'large';
 export type SupportCategory = 'bug' | 'stream' | 'feature' | 'general';
 export type SupportStatus = 'open' | 'resolved';
+export type UserRole = 'listener' | 'vip' | 'moderator' | 'developer';
 
 export type BadgeId =
   | 'streak_3'
@@ -98,6 +99,9 @@ export interface AppPreferences {
 
 export interface UserProfile {
   uid: string;
+  email?: string;
+  authProvider?: 'google' | 'other';
+  role?: UserRole;
   username: string;
   displayName: string;
   bio: string;
@@ -120,6 +124,9 @@ export interface UserProfile {
   recoverableStreak: number;
   recoveryUsedTier30: number;
   recoveryUsedTier7: number;
+  lastSeenAt?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 }
 
 export interface SharedPlaylistMember {

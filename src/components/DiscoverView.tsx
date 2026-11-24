@@ -1,5 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Disc3, Film, Layers, ListPlus, Pause, Play, Radio, RefreshCw, Sparkles } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Disc3,
+  Film,
+  Layers,
+  ListPlus,
+  Pause,
+  Play,
+  Radio,
+  RefreshCw,
+  Sparkles,
+  Trophy,
+  Video,
+  X,
+} from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import type { DiscoverPayload, GenreDefinition, RegionScope, Track } from '../types/music';
 import { apiFetch } from '../utils/apiFetch';
@@ -74,6 +88,20 @@ export function DiscoverView({
   const [genreTracks, setGenreTracks] = useState<Track[]>([]);
   const [genreLoading, setGenreLoading] = useState(false);
   const [genreError, setGenreError] = useState<string | null>(null);
+  const [eventBannerDismissed, setEventBannerDismissed] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('audixify_event_spotlight_dismissed') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleDismissEventBanner = () => {
+    setEventBannerDismissed(true);
+    try {
+      sessionStorage.setItem('audixify_event_spotlight_dismissed', '1');
+    } catch {}
+  };
 
   useEffect(() => {
     if (selectedGenre === 'all') {
@@ -505,6 +533,59 @@ export function DiscoverView({
                     )}
                   </div>
                 </div>
+              </div>
+            </section>
+          )}
+
+          {/* Editorial Creator Promotion Spotlight (#audixify) */}
+          {onOpenTikTokEvent && !eventBannerDismissed && (
+            <section
+              aria-label="Event Promosi TikTok Audixify"
+              className="relative overflow-hidden rounded-[24px] ios-glass border border-[#FF4D2E]/25 p-4 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div className="flex items-start sm:items-center gap-3.5 min-w-0 pr-7 sm:pr-0">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FF4D2E] to-amber-500 text-white flex items-center justify-center shadow-md shrink-0">
+                  <Video className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[#FF4D2E]">
+                      <Trophy className="w-3.5 h-3.5" />
+                      <span>Creator Event · #audixify</span>
+                    </span>
+                    <span className="text-[11px] font-medium text-amber-600 dark:text-amber-300">
+                      Reward Spesial dari @sekaynotdev
+                    </span>
+                  </div>
+                  <h2 className="font-display text-sm sm:text-base font-bold text-zinc-950 dark:text-white">
+                    Upload Momen Audixify ke TikTok Pakai Tag #audixify
+                  </h2>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                    Pakai Story Collage 3 Lagu, Lirik Sync, atau Listen Together — total views &amp;
+                    likes tembus target? Klaim reward spesial langsung via Telegram.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={onOpenTikTokEvent}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-[#FF4D2E] text-white text-xs font-semibold hover:bg-[#E63E21] active:scale-95 transition-all shadow-sm whitespace-nowrap"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Ikut &amp; Cek Reward</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismissEventBanner}
+                  aria-label="Sembunyikan banner event untuk sesi ini"
+                  title="Tutup sementara"
+                  className="w-8 h-8 rounded-full ios-glass-pill flex items-center justify-center text-zinc-500 hover:text-zinc-900 dark:hover:text-white active:scale-90 transition-all absolute top-3 right-3 sm:static"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             </section>
           )}

@@ -18,6 +18,7 @@ import {
   MessageSquareText,
   Mic2,
   Moon,
+  Radio,
   Save,
   Settings,
   Share2,
@@ -31,6 +32,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
+import { isDeveloperUser } from '../lib/firebase';
 import {
   PROFILE_CONSTRAINTS,
   type AudioQuality,
@@ -42,8 +44,14 @@ import { compressImageFile } from '../utils/imageCompress';
 import { getListeningSummary } from '../utils/listeningStats';
 import { IOS_SPRING_SNAPPY } from '../utils/motion';
 import { ShareRecapModal } from './ShareRecapModal';
-import { DeveloperBadge, GoldCrownBadge, GreenVerifiedBadge } from './VerifiedBadge';
+import {
+  DeveloperBadge,
+  GoldCrownBadge,
+  GreenVerifiedBadge,
+  RoleBadge,
+} from './VerifiedBadge';
 import { AboutSkyPage } from './profile/AboutSkyPage';
+import { DeveloperUsersPanel } from './profile/DeveloperUsersPanel';
 import { StreakBadgeVault } from './profile/StreakBadgeVault';
 
 export type ProfileTab = 'account' | 'settings' | 'about';
@@ -53,6 +61,7 @@ interface ProfileViewProps {
   onOpenSupportPage: () => void;
   onOpenShortcuts: () => void;
   onOpenCollageStudio?: () => void;
+  onOpenListenTogether?: () => void;
   onOpenTikTokEvent?: () => void;
   pwaState?: {
     isStandalone: boolean;
@@ -66,6 +75,7 @@ export function ProfileView({
   onOpenSupportPage,
   onOpenShortcuts,
   onOpenCollageStudio,
+  onOpenListenTogether,
   onOpenTikTokEvent,
   pwaState,
 }: ProfileViewProps) {
@@ -262,6 +272,7 @@ export function ProfileView({
                 {isDeveloper && <DeveloperBadge showLabel size="md" />}
                 {showGreenCheckmark && <GreenVerifiedBadge showLabel size="md" />}
                 {showGoldFrame && <GoldCrownBadge showLabel size="md" />}
+                <RoleBadge role={profile?.role} size="md" />
                 {(profile?.streakCount ?? 0) >= 1 && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-[#FF4D2E]/15 text-[#FF4D2E]">
                     <Flame className="w-3 h-3" />
@@ -643,6 +654,92 @@ export function ProfileView({
 
       {tab === 'settings' && (
         <div className="space-y-5">
+          {/* Social, Listen Together & Studio Features */}
+          {(onOpenListenTogether || onOpenCollageStudio || onOpenTikTokEvent) && (
+            <section
+              aria-label="Social and Studio Features"
+              className="rounded-[28px] ios-glass divide-y divide-black/[0.06] dark:divide-white/[0.07] overflow-hidden"
+            >
+              {onOpenListenTogether && (
+                <button
+                  type="button"
+                  onClick={onOpenListenTogether}
+                  className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-white/50 dark:hover:bg-white/[0.05] transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-2xl bg-[#FF4D2E]/15 text-[#FF4D2E] flex items-center justify-center shrink-0">
+                      <Radio className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                        <span>Listen Together</span>
+                        <span className="px-2 py-0.5 rounded-full bg-[#FF4D2E]/15 text-[#FF4D2E] text-[10px] font-bold uppercase tracking-wider">
+                          Live Room
+                        </span>
+                      </div>
+                      <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Dengar musik bareng real-time (2–10 orang), pilih lagu &amp; ngobrol di /listen-together
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+                </button>
+              )}
+
+              {onOpenCollageStudio && (
+                <button
+                  type="button"
+                  onClick={onOpenCollageStudio}
+                  className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-white/50 dark:hover:bg-white/[0.05] transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-2xl bg-violet-500/15 text-violet-500 flex items-center justify-center shrink-0">
+                      <Layers className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        Story Collage Studio (3 Lagu)
+                      </div>
+                      <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Gabungkan foto galeri &amp; 3 lagu favoritmu untuk TikTok atau IG Story
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+                </button>
+              )}
+
+              {onOpenTikTokEvent && (
+                <button
+                  type="button"
+                  onClick={onOpenTikTokEvent}
+                  className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-white/50 dark:hover:bg-white/[0.05] transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-2xl bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                        <span>Event Promosi TikTok #audixify</span>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-300 text-[10px] font-bold uppercase tracking-wider">
+                          Reward
+                        </span>
+                      </div>
+                      <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Post video pakai tag #audixify — views + likes tembus? Klaim reward ke @sekaynotdev
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+                </button>
+              )}
+            </section>
+          )}
+
+          {/* Developer-Only User, Gmail, Guest & Role/Verified Management */}
+          {isDeveloperUser(user) && <DeveloperUsersPanel />}
+
           {/* Appearance & Performance */}
           <section className="rounded-[28px] ios-glass divide-y divide-black/[0.06] dark:divide-white/[0.07] overflow-hidden">
             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

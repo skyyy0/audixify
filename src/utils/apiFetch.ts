@@ -25,6 +25,26 @@ const safeModeListeners = new Set<(state: SafeModeState) => void>();
 const safeModeWaiters: Array<(cleared: boolean) => void> = [];
 
 const RELOAD_STAMPS_KEY = 'audixify_boot_stamps_v1';
+const VISITOR_SID_KEY = 'audixify_sid_v1';
+let visitorAuthMode: 'guest' | 'gmail' = 'guest';
+
+export function setVisitorAuthMode(mode: 'guest' | 'gmail'): void {
+  visitorAuthMode = mode;
+}
+
+function getVisitorSessionId(): string {
+  if (typeof window === 'undefined') return 'ssr';
+  try {
+    let sid = sessionStorage.getItem(VISITOR_SID_KEY);
+    if (!sid) {
+      sid = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      sessionStorage.setItem(VISITOR_SID_KEY, sid);
+    }
+    return sid;
+  } catch {
+    return 'ephemeral';
+  }
+}
 
 function notifySafeMode(): void {
   for (const cb of safeModeListeners) {
@@ -277,6 +297,8 @@ export async function apiFetch(input: string, init?: RequestInit): Promise<Respo
     const headers = new Headers(init?.headers || {});
     headers.set('X-Requested-With', 'Audixify-Web');
     headers.set('X-Audixify-Shield', token);
+    headers.set('X-Audixify-Sid', getVisitorSessionId());
+    headers.set('X-Audixify-Auth', visitorAuthMode);
     const clearance = getActiveClearanceHeader();
     if (clearance) {
       headers.set('X-Audixify-Clearance', clearance);
