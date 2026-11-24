@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Disc3, Film, Layers, ListPlus, Pause, Play, RefreshCw } from 'lucide-react';
+import { Disc3, Film, Layers, ListPlus, Pause, Play, Radio, RefreshCw, Sparkles } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import type { DiscoverPayload, GenreDefinition, RegionScope, Track } from '../types/music';
 import { apiFetch } from '../utils/apiFetch';
@@ -42,6 +42,8 @@ interface DiscoverViewProps {
   onArtistClick: (name: string) => void;
   onAlbumClick: (title: string, artist: string) => void;
   onOpenCollageStudio?: () => void;
+  onOpenListenTogether?: () => void;
+  onOpenTikTokEvent?: () => void;
 }
 
 export function DiscoverView({
@@ -55,6 +57,8 @@ export function DiscoverView({
   onArtistClick,
   onAlbumClick,
   onOpenCollageStudio,
+  onOpenListenTogether,
+  onOpenTikTokEvent,
 }: DiscoverViewProps) {
   const {
     currentTrack,
@@ -477,6 +481,26 @@ export function DiscoverView({
                       >
                         <Layers className="w-4 h-4 text-[#FF4D2E]" />
                         <span>Story Collage</span>
+                      </button>
+                    )}
+                    {onOpenListenTogether && (
+                      <button
+                        type="button"
+                        onClick={onOpenListenTogether}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full ios-glass-pill text-zinc-700 dark:text-zinc-200 text-sm font-medium hover:bg-white/80 dark:hover:bg-white/[0.12] active:scale-95 transition-all whitespace-nowrap"
+                      >
+                        <Radio className="w-4 h-4 text-[#FF4D2E]" />
+                        <span>Listen Together</span>
+                      </button>
+                    )}
+                    {onOpenTikTokEvent && (
+                      <button
+                        type="button"
+                        onClick={onOpenTikTokEvent}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-amber-500/14 border border-amber-400/30 text-amber-700 dark:text-amber-300 text-sm font-semibold hover:bg-amber-500/20 active:scale-95 transition-all whitespace-nowrap"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>Event #audixify</span>
                       </button>
                     )}
                   </div>

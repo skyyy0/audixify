@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart3, Compass, Flame, Heart, Keyboard, Library, ListMusic, Plus, Search, User } from 'lucide-react';
+import { BarChart3, Compass, Flame, Heart, Keyboard, Library, ListMusic, Plus, Radio, Search, Sparkles, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
 import { BrandMark } from './BrandMark';
@@ -12,9 +12,18 @@ interface SidebarProps {
   activePlaylistId: string | null;
   onNavigate: (view: NavDestination, playlistId?: string) => void;
   onOpenShortcuts?: () => void;
+  onOpenListenTogether?: () => void;
+  onOpenTikTokEvent?: () => void;
 }
 
-export function Sidebar({ activeView, activePlaylistId, onNavigate, onOpenShortcuts }: SidebarProps) {
+export function Sidebar({
+  activeView,
+  activePlaylistId,
+  onNavigate,
+  onOpenShortcuts,
+  onOpenListenTogether,
+  onOpenTikTokEvent,
+}: SidebarProps) {
   const { likedTracks, playlists, createPlaylist } = usePlayer();
   const { profile, user, isDeveloper, showGreenCheckmark } = useAuth();
   const [creating, setCreating] = useState(false);
@@ -94,6 +103,31 @@ export function Sidebar({ activeView, activePlaylistId, onNavigate, onOpenShortc
               </button>
             );
           })}
+
+          {onOpenListenTogether && (
+            <button
+              type="button"
+              onClick={onOpenListenTogether}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-sm font-semibold text-[#FF4D2E] hover:bg-[#FF4D2E]/10 active:scale-[0.97] transition-all whitespace-nowrap"
+            >
+              <Radio className="w-4 h-4 shrink-0" />
+              <span className="flex-1 text-left truncate">Listen Together</span>
+              <span className="px-1.5 py-0.5 rounded-full bg-[#FF4D2E]/15 text-[9px] font-bold uppercase tracking-wider">
+                Live
+              </span>
+            </button>
+          )}
+
+          {onOpenTikTokEvent && (
+            <button
+              type="button"
+              onClick={onOpenTikTokEvent}
+              className="w-full flex items-center gap-3 px-3.5 py-2 rounded-2xl text-xs font-semibold text-amber-600 dark:text-amber-300 hover:bg-amber-500/10 active:scale-[0.97] transition-all whitespace-nowrap"
+            >
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+              <span className="flex-1 text-left truncate">Event #audixify</span>
+            </button>
+          )}
         </nav>
 
         {/* Playlists & Liked */}

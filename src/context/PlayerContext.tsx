@@ -756,7 +756,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       } else {
         audio.volume = mutedRef.current ? 0 : volumeRef.current;
       }
-      if (eqSettingsRef.current.enabled) {
+      const isLitePerf =
+        typeof document !== 'undefined' && document.documentElement.dataset.perf === 'lite';
+      if (eqSettingsRef.current.enabled || !isLitePerf) {
         if (!eqEngineRef.current) eqEngineRef.current = new WebAudioEqualizerEngine();
         if (eqEngineRef.current.ensureInitialized(audio)) {
           eqEngineRef.current.applySettings(eqSettingsRef.current);

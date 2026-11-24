@@ -42,7 +42,7 @@ import { compressImageFile } from '../utils/imageCompress';
 import { getListeningSummary } from '../utils/listeningStats';
 import { IOS_SPRING_SNAPPY } from '../utils/motion';
 import { ShareRecapModal } from './ShareRecapModal';
-import { DeveloperBadge, GreenVerifiedBadge } from './VerifiedBadge';
+import { DeveloperBadge, GoldCrownBadge, GreenVerifiedBadge } from './VerifiedBadge';
 import { AboutSkyPage } from './profile/AboutSkyPage';
 import { StreakBadgeVault } from './profile/StreakBadgeVault';
 
@@ -53,6 +53,7 @@ interface ProfileViewProps {
   onOpenSupportPage: () => void;
   onOpenShortcuts: () => void;
   onOpenCollageStudio?: () => void;
+  onOpenTikTokEvent?: () => void;
   pwaState?: {
     isStandalone: boolean;
     snoozeRemainingHours: number;
@@ -65,6 +66,7 @@ export function ProfileView({
   onOpenSupportPage,
   onOpenShortcuts,
   onOpenCollageStudio,
+  onOpenTikTokEvent,
   pwaState,
 }: ProfileViewProps) {
   const {
@@ -72,6 +74,7 @@ export function ProfileView({
     profile,
     isDeveloper,
     showGreenCheckmark,
+    showGoldFrame,
     preferences,
     signingIn,
     authError,
@@ -212,7 +215,13 @@ export function ProfileView({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
             <div className="relative shrink-0">
-              <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-zinc-200 to-zinc-300 dark:from-zinc-800 dark:to-zinc-900 border-2 border-white/60 dark:border-white/15 shadow-lg flex items-center justify-center">
+              <div
+                className={`w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-zinc-200 to-zinc-300 dark:from-zinc-800 dark:to-zinc-900 shadow-lg flex items-center justify-center transition-all ${
+                  showGoldFrame
+                    ? 'ring-[3px] ring-amber-400 border-2 border-amber-200 shadow-[0_0_24px_rgba(251,191,36,0.45)]'
+                    : 'border-2 border-white/60 dark:border-white/15'
+                }`}
+              >
                 {effectiveAvatar ? (
                   <img
                     src={effectiveAvatar}
@@ -252,6 +261,7 @@ export function ProfileView({
                 </h1>
                 {isDeveloper && <DeveloperBadge showLabel size="md" />}
                 {showGreenCheckmark && <GreenVerifiedBadge showLabel size="md" />}
+                {showGoldFrame && <GoldCrownBadge showLabel size="md" />}
                 {(profile?.streakCount ?? 0) >= 1 && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-[#FF4D2E]/15 text-[#FF4D2E]">
                     <Flame className="w-3 h-3" />
@@ -361,6 +371,16 @@ export function ProfileView({
                 </h2>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {onOpenTikTokEvent && (
+                  <button
+                    type="button"
+                    onClick={onOpenTikTokEvent}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-[#FF4D2E]/15 to-amber-500/15 border border-[#FF4D2E]/30 text-xs font-semibold text-[#FF4D2E] active:scale-95 transition-all"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Event TikTok #audixify</span>
+                  </button>
+                )}
                 {onOpenCollageStudio && (
                   <button
                     type="button"

@@ -146,7 +146,7 @@ export class WebAudioEqualizerEngine {
         return node;
       });
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 64;
+      analyser.fftSize = 128;
       analyser.smoothingTimeConstant = 0.78;
 
       let prev: AudioNode = source;

@@ -18,6 +18,7 @@ import {
   SkipForward,
   Sliders,
   User,
+  Users,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -25,12 +26,14 @@ import { usePlayer, usePlayerProgress } from '../context/PlayerContext';
 import { formatDuration } from '../utils/format';
 import { IOS_SPRING_SNAPPY } from '../utils/motion';
 import { Artwork } from './Artwork';
+import { LiveSpectrumBars } from './LiveSpectrumBars';
 import type { NavDestination } from './Sidebar';
 
 interface PlayerBarProps {
   activeView: NavDestination;
   onNavigate: (view: NavDestination) => void;
   onArtistClick: (name: string) => void;
+  onOpenListenTogether?: () => void;
 }
 
 function PlayerBarScrubber({ fallbackDuration }: { fallbackDuration: number }) {
@@ -85,7 +88,7 @@ function MobileMiniProgressBar({ fallbackDuration }: { fallbackDuration: number 
   );
 }
 
-export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarProps) {
+export function PlayerBar({ activeView, onNavigate, onArtistClick, onOpenListenTogether }: PlayerBarProps) {
   const {
     currentTrack,
     isPlaying,
@@ -194,6 +197,12 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
                   ) : null}
                 </div>
               </div>
+
+              <LiveSpectrumBars
+                variant="mini"
+                active={isPlaying}
+                className="hidden xl:flex shrink-0"
+              />
 
               <button
                 type="button"
@@ -358,6 +367,18 @@ export function PlayerBar({ activeView, onNavigate, onArtistClick }: PlayerBarPr
                 <Film className="w-3.5 h-3.5 text-[#FF4D2E]" />
                 <span>MV</span>
               </button>
+
+              {onOpenListenTogether && (
+                <button
+                  type="button"
+                  onClick={onOpenListenTogether}
+                  title="Listen Together Room"
+                  aria-label="Open Listen Together"
+                  className="hidden md:flex min-w-[34px] min-h-[34px] items-center justify-center rounded-full text-zinc-500 hover:text-[#FF4D2E] active:scale-90 transition-all"
+                >
+                  <Users className="w-4 h-4" />
+                </button>
+              )}
 
               <button
                 type="button"

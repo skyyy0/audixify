@@ -1,4 +1,12 @@
 User-agent: *
+Allow: /
+Allow: /listen-together
+Disallow: /api/
+Disallow: /support
+
+User-agent: Googlebot
+Allow: /
+Allow: /listen-together
 Disallow: /api/
 Disallow: /support
 
@@ -28,3 +36,5 @@ Disallow: /
 
 User-agent: Google-Extended
 Disallow: /
+
+Sitemap: https://audixify.skydev.my.id/sitemap.xml

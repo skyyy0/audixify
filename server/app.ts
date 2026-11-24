@@ -16,6 +16,7 @@ import {
   isValidExternalMediaUrl,
   resolveAudioStream,
   searchCatalog,
+  searchTracksByLyrics,
 } from './scraper.ts';
 import {
   antiBotApiGuard,
@@ -58,6 +59,14 @@ export function createApiApp(): express.Express {
     res.send(
       [
         'User-agent: *',
+        'Allow: /',
+        'Allow: /listen-together',
+        'Disallow: /api/',
+        'Disallow: /support',
+        '',
+        'User-agent: Googlebot',
+        'Allow: /',
+        'Allow: /listen-together',
         'Disallow: /api/',
         'Disallow: /support',
         '',
@@ -87,6 +96,33 @@ export function createApiApp(): express.Express {
         '',
         'User-agent: Google-Extended',
         'Disallow: /',
+        '',
+        'Sitemap: https://audixify.skydev.my.id/sitemap.xml',
+      ].join('\n'),
+    );
+  });
+
+  app.get('/sitemap.xml', (_req, res) => {
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    const lastmod = new Date().toISOString().slice(0, 10);
+    res.send(
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+        '  <url>',
+        '    <loc>https://audixify.skydev.my.id/</loc>',
+        `    <lastmod>${lastmod}</lastmod>`,
+        '    <changefreq>daily</changefreq>',
+        '    <priority>1.0</priority>',
+        '  </url>',
+        '  <url>',
+        '    <loc>https://audixify.skydev.my.id/listen-together</loc>',
+        `    <lastmod>${lastmod}</lastmod>`,
+        '    <changefreq>daily</changefreq>',
+        '    <priority>0.85</priority>',
+        '  </url>',
+        '</urlset>',
       ].join('\n'),
     );
   });
@@ -139,6 +175,23 @@ export function createApiApp(): express.Express {
     } catch (err) {
       res.status(502).json({
         error: err instanceof Error ? err.message : 'Search scrape failed',
+      });
+    }
+  });
+
+  app.get('/api/lyrics-search', antiBotApiGuard, async (req, res) => {
+    try {
+      const q = String(req.query.q || '').trim();
+      if (q.length < 2) {
+        res.json({ query: q, hits: [] });
+        return;
+      }
+      const data = await searchTracksByLyrics(q);
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'Lyric search failed',
       });
     }
   });

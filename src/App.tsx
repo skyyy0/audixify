@@ -44,6 +44,19 @@ const MusicCollageModal = lazy(() =>
   import('./components/MusicCollageModal').then((m) => ({ default: m.MusicCollageModal })),
 );
 
+const ListenTogetherPage = lazy(() =>
+  import('./components/ListenTogetherPage').then((m) => ({ default: m.ListenTogetherPage })),
+);
+
+const TikTokEventModal = lazy(() =>
+  import('./components/TikTokEventModal').then((m) => ({ default: m.TikTokEventModal })),
+);
+
+function isListenTogetherPath(pathname: string): boolean {
+  const norm = decodeURIComponent(pathname).toLowerCase().replace(/\/+$/, '');
+  return norm === '/listen-together' || norm === '/listing-together' || norm === '/listing together';
+}
+
 function AudixifyShell() {
   const {
     currentTrack,
@@ -60,6 +73,18 @@ function AudixifyShell() {
   const [isSupportRoute, setIsSupportRoute] = useState<boolean>(
     () => typeof window !== 'undefined' && window.location.pathname === '/support',
   );
+  const [isListenTogetherRoute, setIsListenTogetherRoute] = useState<boolean>(
+    () => typeof window !== 'undefined' && isListenTogetherPath(window.location.pathname),
+  );
+  const [initialRoomCode, setInitialRoomCode] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const r = new URLSearchParams(window.location.search).get('room');
+      return r && r.trim() ? r.trim().toUpperCase() : null;
+    } catch {
+      return null;
+    }
+  });
   const [activeView, setActiveView] = useState<NavDestination>('discover');
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
   const [regionScope, setRegionScope] = useState<RegionScope>(() => preferences.defaultRegion || 'all');
@@ -67,6 +92,7 @@ function AudixifyShell() {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [collageModalOpen, setCollageModalOpen] = useState(false);
+  const [tiktokEventOpen, setTiktokEventOpen] = useState(false);
   const [safeMode, setSafeMode] = useState<SafeModeState>({ active: false, reason: '' });
 
   const mainScrollRef = useRef<HTMLElement | null>(null);
@@ -78,11 +104,27 @@ function AudixifyShell() {
     return unsub;
   }, []);
 
-  // Read ?join=CODE invite links cleanly on load
+  // Read ?join=CODE, ?room=CODE, or ?q=QUERY invite/search links cleanly on load
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const join = params.get('join');
+      const room = params.get('room');
+      const q = params.get('q');
+
+      if (room && room.trim()) {
+        setInitialRoomCode(room.trim().toUpperCase());
+        setIsListenTogetherRoute(true);
+        if (!isListenTogetherPath(window.location.pathname)) {
+          window.history.replaceState(
+            window.history.state,
+            '',
+            `/listen-together?room=${encodeURIComponent(room.trim().toUpperCase())}`,
+          );
+        }
+        return;
+      }
+
       if (join && join.trim()) {
         setPendingJoinCode(join.trim().toUpperCase());
         setActiveView('library');
@@ -90,6 +132,9 @@ function AudixifyShell() {
         const nextSearch = params.toString();
         const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
         window.history.replaceState(window.history.state, '', nextUrl);
+      } else if (q && q.trim()) {
+        setSearchQuery(q.trim());
+        setActiveView('search');
       }
     } catch {}
   }, []);
@@ -97,15 +142,32 @@ function AudixifyShell() {
   useEffect(() => {
     const handlePopState = () => {
       setIsSupportRoute(window.location.pathname === '/support');
+      setIsListenTogetherRoute(isListenTogetherPath(window.location.pathname));
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // Keep page <title> and canonical link synced with active dedicated route for SEO
+  useEffect(() => {
+    const canonicalEl = document.querySelector('link[rel="canonical"]');
+    if (isListenTogetherRoute) {
+      document.title = 'Listen Together — Audixify Real-Time Listening Room';
+      canonicalEl?.setAttribute('href', 'https://audixify.skydev.my.id/listen-together');
+    } else if (isSupportRoute) {
+      document.title = 'Support Center — Audixify';
+      canonicalEl?.setAttribute('href', 'https://audixify.skydev.my.id/support');
+    } else {
+      document.title = 'Audixify — Stream Musik Indonesia, Asia & Global + Lirik Sync & Listen Together';
+      canonicalEl?.setAttribute('href', 'https://audixify.skydev.my.id/');
+    }
+  }, [isListenTogetherRoute, isSupportRoute]);
+
   const openSupportPage = useCallback(() => {
     if (window.location.pathname !== '/support') {
       window.history.pushState({ page: 'support' }, '', '/support');
     }
+    setIsListenTogetherRoute(false);
     setIsSupportRoute(true);
   }, []);
 
@@ -114,6 +176,21 @@ function AudixifyShell() {
       window.history.pushState({ page: 'app' }, '', '/');
     }
     setIsSupportRoute(false);
+  }, []);
+
+  const openListenTogetherPage = useCallback(() => {
+    if (!isListenTogetherPath(window.location.pathname)) {
+      window.history.pushState({ page: 'listen-together' }, '', '/listen-together');
+    }
+    setIsSupportRoute(false);
+    setIsListenTogetherRoute(true);
+  }, []);
+
+  const closeListenTogetherPage = useCallback(() => {
+    if (isListenTogetherPath(window.location.pathname)) {
+      window.history.pushState({ page: 'app' }, '', '/');
+    }
+    setIsListenTogetherRoute(false);
   }, []);
 
   const [discoverData, setDiscoverData] = useState<DiscoverPayload | null>(null);
@@ -416,6 +493,20 @@ function AudixifyShell() {
         >
           <SupportPage onBackToApp={closeSupportPage} />
         </Suspense>
+      ) : isListenTogetherRoute ? (
+        <Suspense
+          fallback={
+            <div className="min-h-screen w-full flex items-center justify-center ios-ambient-canvas text-xs text-zinc-500">
+              Loading Audixify Listen Together...
+            </div>
+          }
+        >
+          <ListenTogetherPage
+            initialRoomCode={initialRoomCode}
+            onClearInitialRoomCode={() => setInitialRoomCode(null)}
+            onBackToApp={closeListenTogetherPage}
+          />
+        </Suspense>
       ) : (
         <>
           <div className="flex-1 flex min-h-0 overflow-hidden">
@@ -424,6 +515,8 @@ function AudixifyShell() {
               activePlaylistId={activePlaylistId}
               onNavigate={handleNavigate}
               onOpenShortcuts={() => setShortcutsOpen(true)}
+              onOpenListenTogether={openListenTogetherPage}
+              onOpenTikTokEvent={() => setTiktokEventOpen(true)}
             />
 
             <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative">
@@ -463,6 +556,8 @@ function AudixifyShell() {
                       onArtistClick={handleArtistClick}
                       onAlbumClick={handleAlbumClick}
                       onOpenCollageStudio={() => setCollageModalOpen(true)}
+                      onOpenListenTogether={openListenTogetherPage}
+                      onOpenTikTokEvent={() => setTiktokEventOpen(true)}
                     />
                   </div>
 
@@ -507,6 +602,7 @@ function AudixifyShell() {
                             onOpenSupportPage={openSupportPage}
                             onOpenShortcuts={() => setShortcutsOpen(true)}
                             onOpenCollageStudio={() => setCollageModalOpen(true)}
+                            onOpenTikTokEvent={() => setTiktokEventOpen(true)}
                             pwaState={{
                               isStandalone: pwa.isStandalone,
                               snoozeRemainingHours: pwa.snoozeRemainingHours,
@@ -559,6 +655,7 @@ function AudixifyShell() {
             activeView={activeView}
             onNavigate={(view) => handleNavigate(view)}
             onArtistClick={handleArtistClick}
+            onOpenListenTogether={openListenTogetherPage}
           />
 
           {currentTrack && (
@@ -590,6 +687,16 @@ function AudixifyShell() {
           open={collageModalOpen}
           onClose={() => setCollageModalOpen(false)}
           discoverData={discoverData}
+        />
+      </Suspense>
+
+      {/* TikTok #audixify Creator Promotion Event Modal */}
+      <Suspense fallback={null}>
+        <TikTokEventModal
+          open={tiktokEventOpen}
+          onClose={() => setTiktokEventOpen(false)}
+          onOpenCollageStudio={() => setCollageModalOpen(true)}
+          onOpenListenTogether={openListenTogetherPage}
         />
       </Suspense>
 

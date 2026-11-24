@@ -90,7 +90,7 @@
         },
         "badges": {
           "type": "array",
-          "description": "Unlocked collectible badge IDs (max 20)."
+          "description": "Unlocked collectible badge IDs (max 25)."
         },
         "greenBadgeUnlocked": {
           "type": "boolean",
@@ -99,6 +99,32 @@
         "greenBadgeEnabled": {
           "type": "boolean",
           "description": "User preference to display or hide their unlocked green verified checkmark."
+        },
+        "goldFrameUnlocked": {
+          "type": "boolean",
+          "description": "Unlocked upon reaching a 60-day consecutive login streak."
+        },
+        "goldFrameEnabled": {
+          "type": "boolean",
+          "description": "User preference to display or hide their unlocked Gold Sovereign frame."
+        },
+        "recoverableStreak": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3650,
+          "description": "Previous streak >= 7 available for one-time or three-time recovery after a missed check-in."
+        },
+        "recoveryUsedTier30": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Number of streak recoveries used for streaks >= 30 days (max 3)."
+        },
+        "recoveryUsedTier7": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Number of streak recoveries used for streaks 7-29 days (max 1)."
         },
         "createdAt": {
           "type": "string",
@@ -347,6 +373,155 @@
         }
       },
       "required": ["threadOwnerUid", "senderUid", "senderName", "senderRole", "text", "createdAt"]
+    },
+    "ListenRoom": {
+      "title": "ListenRoom",
+      "description": "Real-time Listen Together room with participant limit, synchronized playback, and in-room track picking.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 24,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 24
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "hostUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "hostName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "maxMembers": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 10
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "UIDs of active listeners inside the room (max 10)."
+        },
+        "members": {
+          "type": "array",
+          "description": "Public display summaries of active listeners (max 10)."
+        },
+        "currentTrack": {
+          "type": "object",
+          "description": "Currently active synchronized track or null."
+        },
+        "isPlaying": {
+          "type": "boolean"
+        },
+        "positionSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "syncUpdatedAtMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "updatedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "updatedByName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "name",
+        "hostUid",
+        "hostName",
+        "maxMembers",
+        "memberUids",
+        "members",
+        "isPlaying",
+        "positionSec",
+        "syncUpdatedAtMs",
+        "updatedByUid",
+        "updatedByName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ListenRoomMessage": {
+      "title": "ListenRoomMessage",
+      "description": "Real-time chat message sent inside a Listen Together room.",
+      "type": "object",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 24,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "senderUsername": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 24
+        },
+        "senderAvatar": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120000
+        },
+        "isDeveloper": {
+          "type": "boolean"
+        },
+        "greenBadge": {
+          "type": "boolean"
+        },
+        "goldFrame": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["roomId", "senderUid", "senderName", "text", "createdAt"]
     }
   },
   "firestore": {
@@ -361,6 +536,14 @@
     "/sharedPlaylists/{playlistId}": {
       "schema": { "$ref": "#/entities/SharedPlaylist" },
       "description": "Collaborative real-time playlists shared via invite code."
+    },
+    "/listenRooms/{roomId}": {
+      "schema": { "$ref": "#/entities/ListenRoom" },
+      "description": "Real-time Listen Together rooms with participant capacity limits and synced playback."
+    },
+    "/listenRooms/{roomId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ListenRoomMessage" },
+      "description": "Live chat messages inside a Listen Together room."
     },
     "/supportThreads/{threadId}": {
       "schema": { "$ref": "#/entities/SupportThread" },

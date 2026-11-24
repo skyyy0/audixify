@@ -165,3 +165,13 @@ export interface ReleaseRadarPayload {
   fetchedAt: string;
 }
 
+export interface LyricSearchHit {
+  track: Track;
+  matchedSnippet: string;
+  synced: boolean;
+}
+
+export interface LyricSearchPayload {
+  query: string;
+  hits: LyricSearchHit[];
+}

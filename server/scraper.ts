@@ -8,6 +8,8 @@ import type {
   ArtistSummary,
   ArtistVideoItem,
   DiscoverPayload,
+  LyricSearchHit,
+  LyricSearchPayload,
   LyricsPayload,
   MusicVideoResult,
   QuickMix,
@@ -2281,4 +2283,270 @@ export async function getReleaseRadar(artistNames: string[]): Promise<ReleaseRad
   });
 }
 
+function extractBestLyricSnippet(rawLyrics: string, queryNorm: string, queryTokens: string[]): {
+  score: number;
+  snippet: string;
+} {
+  const cleanLines = rawLyrics
+    .replace(/\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/g, ' ')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length >= 3);
+
+  if (cleanLines.length === 0) return { score: 0, snippet: '' };
+
+  const fullNorm = normalizeText(cleanLines.join(' '));
+  let globalScore = 0;
+
+  if (queryNorm.length >= 4 && fullNorm.includes(queryNorm)) {
+    globalScore += 140;
+  }
+
+  let matchedTokensTotal = 0;
+  for (const tok of queryTokens) {
+    if (fullNorm.includes(tok)) matchedTokensTotal++;
+  }
+  const tokenCoverage = queryTokens.length > 0 ? matchedTokensTotal / queryTokens.length : 0;
+  globalScore += Math.round(tokenCoverage * 80);
+
+  let bestWindowScore = -1;
+  let bestSnippet = '';
+
+  for (let i = 0; i < cleanLines.length; i++) {
+    const line1 = cleanLines[i];
+    const twoLines = i + 1 < cleanLines.length ? `${line1}\n${cleanLines[i + 1]}` : line1;
+    const norm1 = normalizeText(line1);
+    const norm2 = normalizeText(twoLines);
+
+    let lineScore = 0;
+    if (queryNorm.length >= 4 && norm1.includes(queryNorm)) {
+      lineScore += 200;
+    } else if (queryNorm.length >= 4 && norm2.includes(queryNorm)) {
+      lineScore += 165;
+    }
+
+    let lineTokenHits = 0;
+    for (const tok of queryTokens) {
+      if (norm1.includes(tok)) lineTokenHits += 2;
+      else if (norm2.includes(tok)) lineTokenHits += 1;
+    }
+    lineScore += lineTokenHits * 25;
+
+    if (lineScore > bestWindowScore) {
+      bestWindowScore = lineScore;
+      bestSnippet = lineScore >= 165 || norm1.length >= 38 ? line1 : twoLines;
+    }
+  }
+
+  // Require genuine lyric match, not accidental 1-word coincidence on long queries
+  if (queryTokens.length >= 3 && tokenCoverage < 0.5 && globalScore < 130) {
+    return { score: 0, snippet: '' };
+  }
+  if (queryTokens.length >= 1 && tokenCoverage === 0) {
+    return { score: 0, snippet: '' };
+  }
+
+  return {
+    score: globalScore + Math.max(0, bestWindowScore),
+    snippet: bestSnippet || cleanLines[0],
+  };
+}
+
+export async function searchTracksByLyrics(query: string): Promise<LyricSearchPayload> {
+  const clean = query.trim();
+  if (clean.length < 2) {
+    return { query: clean, hits: [] };
+  }
+
+  const queryNorm = normalizeText(clean);
+  const queryTokens = queryNorm.split(' ').filter((w) => w.length >= 2);
+
+  return withCache(`lyricsearch:v2:${queryNorm}`, 10 * 60 * 1000, async () => {
+    const [lrclibDirectRes, itunesIdRes, itunesUsRes, ytmRes] = await Promise.allSettled([
+      fetchJson<Array<LrclibItem & { albumName?: string }>>(
+        `https://lrclib.net/api/search?q=${encodeURIComponent(clean)}`,
+        undefined,
+        6500,
+      ),
+      scrapeItunesSearch(clean, 'id', 'ID', 8),
+      scrapeItunesSearch(clean, 'us', 'GLOBAL', 6),
+      scrapeYTMusicSearch(clean, 'ID', 'ID'),
+    ]);
+
+    const seenPairs = new Set<string>();
+    const candidates: Array<{
+      trackName: string;
+      artistName: string;
+      albumName: string;
+      durationSec: number;
+      synced: boolean;
+      snippet: string;
+      score: number;
+      prefetchedTrack?: Track;
+    }> = [];
+
+    const makePairKey = (title: string, artist: string) =>
+      `${normalizeText(title)}::${normalizeText(artist.split(/,|&|feat\.|ft\./i)[0] || artist)}`;
+
+    // 1. Direct LRCLIB hits (already have full lyrics text)
+    const rawItems = lrclibDirectRes.status === 'fulfilled' ? lrclibDirectRes.value : [];
+    for (const item of rawItems) {
+      const trackName = (item.trackName || '').trim();
+      const artistName = (item.artistName || '').trim();
+      const lyricText = item.plainLyrics || item.syncedLyrics || '';
+      if (!trackName || !artistName || !lyricText) continue;
+
+      if (/\b(karaoke|instrumental|8d audio|nightcore|sped up|slowed)\b/i.test(trackName)) {
+        continue;
+      }
+
+      const { score, snippet } = extractBestLyricSnippet(lyricText, queryNorm, queryTokens);
+      if (score <= 35 || !snippet) continue;
+
+      const pairKey = makePairKey(trackName, artistName);
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+
+      candidates.push({
+        trackName,
+        artistName,
+        albumName: (item.albumName || '').trim(),
+        durationSec: Math.round(Number(item.duration) || 0),
+        synced: Boolean(item.syncedLyrics),
+        snippet,
+        score: score + (item.syncedLyrics ? 15 : 0),
+      });
+    }
+
+    // 2. Candidate songs from iTunes & YT Music (which index full lyric bodies!)
+    const catalogPool = [
+      ...(itunesIdRes.status === 'fulfilled' ? itunesIdRes.value : []),
+      ...(itunesUsRes.status === 'fulfilled' ? itunesUsRes.value : []),
+      ...(ytmRes.status === 'fulfilled' ? ytmRes.value : []),
+    ];
+
+    const unverifiedTracks: Track[] = [];
+    const seenCandidateKeys = new Set<string>(seenPairs);
+    for (const tr of catalogPool) {
+      if (!tr?.title || !tr?.artist) continue;
+      if (/\b(karaoke|instrumental|8d audio|nightcore|sped up|slowed|cover)\b/i.test(tr.title)) {
+        continue;
+      }
+      const key = makePairKey(tr.title, tr.artist);
+      if (seenCandidateKeys.has(key)) continue;
+      seenCandidateKeys.add(key);
+      unverifiedTracks.push(tr);
+      if (unverifiedTracks.length >= 10) break;
+    }
+
+    // Verify each candidate's actual lyrics via getTrackLyrics + extractBestLyricSnippet
+    if (unverifiedTracks.length > 0) {
+      const verifiedResults = await Promise.allSettled(
+        unverifiedTracks.map(async (tr) => {
+          const lyrics = await getTrackLyrics({
+            title: tr.title,
+            artist: tr.artist,
+            album: tr.album,
+            durationSec: tr.durationSec || undefined,
+          });
+          if (!lyrics.found) return null;
+          const fullText =
+            lyrics.plainText || lyrics.lines.map((l) => l.text).join('\n');
+          if (!fullText) return null;
+          const { score, snippet } = extractBestLyricSnippet(
+            fullText,
+            queryNorm,
+            queryTokens,
+          );
+          if (score <= 35 || !snippet) return null;
+          return {
+            trackName: tr.title,
+            artistName: tr.artist,
+            albumName: tr.album,
+            durationSec: tr.durationSec,
+            synced: lyrics.synced,
+            snippet,
+            score: score + (lyrics.synced ? 15 : 0) + 10,
+            prefetchedTrack: tr,
+          };
+        }),
+      );
+
+      for (const res of verifiedResults) {
+        if (res.status === 'fulfilled' && res.value) {
+          const pairKey = makePairKey(res.value.trackName, res.value.artistName);
+          if (!seenPairs.has(pairKey)) {
+            seenPairs.add(pairKey);
+            candidates.push(res.value);
+          }
+        }
+      }
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    const topCandidates = candidates.slice(0, 10);
+
+    const enrichedHits = await Promise.all(
+      topCandidates.map(async (cand): Promise<LyricSearchHit> => {
+        if (cand.prefetchedTrack && cand.prefetchedTrack.artwork) {
+          return {
+            track: cand.prefetchedTrack,
+            matchedSnippet: cand.snippet,
+            synced: cand.synced,
+          };
+        }
+
+        const searchTerm = `${cand.artistName.split(/,|&|feat\./i)[0]?.trim() || cand.artistName} ${cand.trackName}`;
+        const [idHits, usHits] = await Promise.allSettled([
+          scrapeItunesSearch(searchTerm, 'id', 'GLOBAL', 4),
+          scrapeItunesSearch(searchTerm, 'us', 'GLOBAL', 4),
+        ]);
+        const pool = [
+          ...(idHits.status === 'fulfilled' ? idHits.value : []),
+          ...(usHits.status === 'fulfilled' ? usHits.value : []),
+        ];
+
+        const targetTitle = normalizeText(cand.trackName);
+        const targetArtist = normalizeText(cand.artistName.split(/,|&/)[0] || cand.artistName);
+        const matchedTrack =
+          pool.find((t) => {
+            const tTitle = normalizeText(t.title);
+            const tArtist = normalizeText(t.artist);
+            return (
+              (tTitle.includes(targetTitle) || targetTitle.includes(tTitle)) &&
+              (tArtist.includes(targetArtist) || targetArtist.includes(tArtist))
+            );
+          }) || pool[0] || cand.prefetchedTrack;
+
+        const finalTrack: Track = matchedTrack
+          ? {
+              ...matchedTrack,
+              durationSec: matchedTrack.durationSec || cand.durationSec,
+            }
+          : {
+              id: `lyric-${crypto.createHash('sha1').update(`${cand.artistName}:${cand.trackName}`).digest('hex').slice(0, 12)}`,
+              title: cand.trackName,
+              artist: cand.artistName,
+              album: cand.albumName || 'Single',
+              durationSec: cand.durationSec || 210,
+              artwork: '',
+              region: inferRegion(cand.artistName, '', 'GLOBAL'),
+              genre: 'Music',
+              source: 'itunes',
+            };
+
+        return {
+          track: finalTrack,
+          matchedSnippet: cand.snippet,
+          synced: cand.synced,
+        };
+      }),
+    );
+
+    return {
+      query: clean,
+      hits: enrichedHits,
+    };
+  });
+}
 

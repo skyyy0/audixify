@@ -10,14 +10,17 @@ export type BadgeId =
   | 'streak_3'
   | 'streak_7'
   | 'streak_30_crown'
-  | 'streak_30_pioneer';
+  | 'streak_30_pioneer'
+  | 'streak_60_aurora'
+  | 'streak_60_virtuoso'
+  | 'streak_60_immortal';
 
 export interface BadgeDefinition {
   id: BadgeId;
   title: string;
   subtitle: string;
   requiredDays: number;
-  tier: 'bronze' | 'special' | 'legend';
+  tier: 'bronze' | 'special' | 'legend' | 'immortal';
   accent: string;
 }
 
@@ -54,7 +57,36 @@ export const BADGE_CATALOG: BadgeDefinition[] = [
     tier: 'legend',
     accent: '#FF4D2E',
   },
+  {
+    id: 'streak_60_aurora',
+    title: '60-Day Aurora',
+    subtitle: '60 hari berturut-turut menikmati musik tanpa henti',
+    requiredDays: 60,
+    tier: 'immortal',
+    accent: '#FBBF24',
+  },
+  {
+    id: 'streak_60_virtuoso',
+    title: 'Sonic Virtuoso',
+    subtitle: 'Dedikasi audio sejati selama 2 bulan penuh',
+    requiredDays: 60,
+    tier: 'immortal',
+    accent: '#EC4899',
+  },
+  {
+    id: 'streak_60_immortal',
+    title: 'Golden Immortal',
+    subtitle: 'Membuka bingkai Gold Sovereign & mahkota eksklusif',
+    requiredDays: 60,
+    tier: 'immortal',
+    accent: '#F59E0B',
+  },
 ];
+
+export const STREAK_RECOVERY_LIMITS = {
+  tier30Max: 3,
+  tier7Max: 1,
+} as const;
 
 export interface AppPreferences {
   perfMode: PerfMode;
@@ -83,6 +115,11 @@ export interface UserProfile {
   badges: BadgeId[];
   greenBadgeUnlocked: boolean;
   greenBadgeEnabled: boolean;
+  goldFrameUnlocked: boolean;
+  goldFrameEnabled: boolean;
+  recoverableStreak: number;
+  recoveryUsedTier30: number;
+  recoveryUsedTier7: number;
 }
 
 export interface SharedPlaylistMember {
@@ -108,6 +145,49 @@ export interface SharedPlaylist {
   updatedByName: string;
   createdAt?: unknown;
   updatedAt?: unknown;
+}
+
+export interface ListenRoomMember {
+  uid: string;
+  displayName: string;
+  username: string;
+  avatarDataUrl: string;
+  isDeveloper: boolean;
+  greenBadge: boolean;
+  goldFrame: boolean;
+}
+
+export interface ListenRoom {
+  id: string;
+  code: string;
+  name: string;
+  hostUid: string;
+  hostName: string;
+  maxMembers: number;
+  memberUids: string[];
+  members: ListenRoomMember[];
+  currentTrack: Track | null;
+  isPlaying: boolean;
+  positionSec: number;
+  syncUpdatedAtMs: number;
+  updatedByUid: string;
+  updatedByName: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface ListenRoomMessage {
+  id: string;
+  roomId: string;
+  senderUid: string;
+  senderName: string;
+  senderUsername: string;
+  senderAvatar: string;
+  isDeveloper: boolean;
+  greenBadge: boolean;
+  goldFrame: boolean;
+  text: string;
+  createdAt?: unknown;
 }
 
 export interface SupportThread {
@@ -149,4 +229,8 @@ export const PROFILE_CONSTRAINTS = {
   supportTextMax: 1500,
   supportImageMax: 420000,
   supportDeviceMax: 220,
+  listenRoomNameMax: 60,
+  listenRoomMaxCapacity: 10,
+  listenRoomMinCapacity: 2,
+  listenRoomMessageMax: 500,
 } as const;

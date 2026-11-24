@@ -63,6 +63,11 @@ service cloud.firestore {
           'badges',
           'greenBadgeUnlocked',
           'greenBadgeEnabled',
+          'goldFrameUnlocked',
+          'goldFrameEnabled',
+          'recoverableStreak',
+          'recoveryUsedTier30',
+          'recoveryUsedTier7',
           'createdAt',
           'updatedAt'
         ])
@@ -88,11 +93,30 @@ service cloud.firestore {
         && (!('streakCount' in data) || (data.streakCount is int && data.streakCount >= 0 && data.streakCount <= 3650))
         && (!('longestStreak' in data) || (data.longestStreak is int && data.longestStreak >= 0 && data.longestStreak <= 3650))
         && (!('lastCheckInDate' in data) || (data.lastCheckInDate is string && data.lastCheckInDate.size() <= 10 && data.lastCheckInDate.matches('^(\\d{4}-\\d{2}-\\d{2})?$')))
-        && (!('badges' in data) || (data.badges is list && data.badges.size() <= 20))
+        && (!('badges' in data) || (data.badges is list && data.badges.size() <= 25))
         && (!('greenBadgeUnlocked' in data) || data.greenBadgeUnlocked is bool)
         && (!('greenBadgeEnabled' in data) || data.greenBadgeEnabled is bool)
+        && (!('goldFrameUnlocked' in data) || data.goldFrameUnlocked is bool)
+        && (!('goldFrameEnabled' in data) || data.goldFrameEnabled is bool)
+        && (!('recoverableStreak' in data) || (data.recoverableStreak is int && data.recoverableStreak >= 0 && data.recoverableStreak <= 3650))
+        && (!('recoveryUsedTier30' in data) || (data.recoveryUsedTier30 is int && data.recoveryUsedTier30 >= 0 && data.recoveryUsedTier30 <= 3))
+        && (!('recoveryUsedTier7' in data) || (data.recoveryUsedTier7 is int && data.recoveryUsedTier7 >= 0 && data.recoveryUsedTier7 <= 1))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
+    }
+
+    function hasValidMilestoneRewards(data, prev) {
+      return (!data.greenBadgeUnlocked || data.streakCount >= 30 || ('greenBadgeUnlocked' in prev && prev.greenBadgeUnlocked == true))
+        && (!data.greenBadgeEnabled || data.greenBadgeUnlocked == true)
+        && (!('goldFrameUnlocked' in data) || !data.goldFrameUnlocked || data.streakCount >= 60 || ('goldFrameUnlocked' in prev && prev.goldFrameUnlocked == true))
+        && (!('goldFrameEnabled' in data) || !data.goldFrameEnabled || ('goldFrameUnlocked' in data && data.goldFrameUnlocked == true))
+        && (!('streak_3' in data.badges) || data.streakCount >= 3 || ('badges' in prev && 'streak_3' in prev.badges))
+        && (!('streak_7' in data.badges) || data.streakCount >= 7 || ('badges' in prev && 'streak_7' in prev.badges))
+        && (!('streak_30_crown' in data.badges) || data.streakCount >= 30 || ('badges' in prev && 'streak_30_crown' in prev.badges))
+        && (!('streak_30_pioneer' in data.badges) || data.streakCount >= 30 || ('badges' in prev && 'streak_30_pioneer' in prev.badges))
+        && (!('streak_60_aurora' in data.badges) || data.streakCount >= 60 || ('badges' in prev && 'streak_60_aurora' in prev.badges))
+        && (!('streak_60_virtuoso' in data.badges) || data.streakCount >= 60 || ('badges' in prev && 'streak_60_virtuoso' in prev.badges))
+        && (!('streak_60_immortal' in data.badges) || data.streakCount >= 60 || ('badges' in prev && 'streak_60_immortal' in prev.badges));
     }
 
     function isValidStreakCheckIn(data, prev) {
@@ -106,12 +130,52 @@ service cloud.firestore {
         && (!('lastCheckInDate' in prev) || prev.lastCheckInDate == '' || data.lastCheckInDate > prev.lastCheckInDate)
         && (!('streakCount' in prev) ? data.streakCount <= 1 : (data.streakCount >= 1 && data.streakCount <= prev.streakCount + 1))
         && (!('longestStreak' in prev) ? data.longestStreak >= data.streakCount : (data.longestStreak >= prev.longestStreak && data.longestStreak >= data.streakCount))
-        && (!data.greenBadgeUnlocked || data.streakCount >= 30 || ('greenBadgeUnlocked' in prev && prev.greenBadgeUnlocked == true))
-        && (!data.greenBadgeEnabled || data.greenBadgeUnlocked == true)
-        && (!('streak_3' in data.badges) || data.streakCount >= 3 || ('badges' in prev && 'streak_3' in prev.badges))
-        && (!('streak_7' in data.badges) || data.streakCount >= 7 || ('badges' in prev && 'streak_7' in prev.badges))
-        && (!('streak_30_crown' in data.badges) || data.streakCount >= 30 || ('badges' in prev && 'streak_30_crown' in prev.badges))
-        && (!('streak_30_pioneer' in data.badges) || data.streakCount >= 30 || ('badges' in prev && 'streak_30_pioneer' in prev.badges));
+        && (
+          !('recoverableStreak' in data)
+          || data.recoverableStreak == 0
+          || (
+            ('streakCount' in prev)
+            && prev.streakCount >= 7
+            && data.streakCount == 1
+            && data.recoverableStreak == prev.streakCount
+          )
+          || (
+            ('recoverableStreak' in prev)
+            && data.recoverableStreak == prev.recoverableStreak
+          )
+        )
+        && hasValidMilestoneRewards(data, prev);
+    }
+
+    function isValidStreakRecovery(data, prev) {
+      return ('recoverableStreak' in prev)
+        && prev.recoverableStreak is int
+        && prev.recoverableStreak >= 7
+        && ('recoverableStreak' in data)
+        && data.recoverableStreak == 0
+        && ('streakCount' in data)
+        && data.streakCount == prev.recoverableStreak + 1
+        && ('longestStreak' in data)
+        && (!('longestStreak' in prev) ? data.longestStreak >= data.streakCount : (data.longestStreak >= prev.longestStreak && data.longestStreak >= data.streakCount))
+        && ('badges' in data)
+        && ('greenBadgeUnlocked' in data)
+        && ('greenBadgeEnabled' in data)
+        && (
+          prev.recoverableStreak >= 30
+            ? (
+              ((!('recoveryUsedTier30' in prev)) ? 0 : prev.recoveryUsedTier30) < 3
+              && ('recoveryUsedTier30' in data)
+              && data.recoveryUsedTier30 == (((!('recoveryUsedTier30' in prev)) ? 0 : prev.recoveryUsedTier30) + 1)
+              && ((!('recoveryUsedTier7' in data)) || data.recoveryUsedTier7 == ((!('recoveryUsedTier7' in prev)) ? 0 : prev.recoveryUsedTier7))
+            )
+            : (
+              ((!('recoveryUsedTier7' in prev)) ? 0 : prev.recoveryUsedTier7) < 1
+              && ('recoveryUsedTier7' in data)
+              && data.recoveryUsedTier7 == (((!('recoveryUsedTier7' in prev)) ? 0 : prev.recoveryUsedTier7) + 1)
+              && ((!('recoveryUsedTier30' in data)) || data.recoveryUsedTier30 == ((!('recoveryUsedTier30' in prev)) ? 0 : prev.recoveryUsedTier30))
+            )
+        )
+        && hasValidMilestoneRewards(data, prev);
     }
 
     function isValidUserLibraryState(data, userId) {
@@ -197,6 +261,123 @@ service cloud.firestore {
         && data.updatedByName.size() <= 60
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
+    }
+
+    function isValidListenRoom(data, roomId) {
+      return data.keys().hasAll([
+          'id',
+          'code',
+          'name',
+          'hostUid',
+          'hostName',
+          'maxMembers',
+          'memberUids',
+          'members',
+          'currentTrack',
+          'isPlaying',
+          'positionSec',
+          'syncUpdatedAtMs',
+          'updatedByUid',
+          'updatedByName',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'code',
+          'name',
+          'hostUid',
+          'hostName',
+          'maxMembers',
+          'memberUids',
+          'members',
+          'currentTrack',
+          'isPlaying',
+          'positionSec',
+          'syncUpdatedAtMs',
+          'updatedByUid',
+          'updatedByName',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == roomId
+        && data.id.size() >= 6
+        && data.id.size() <= 24
+        && data.code is string
+        && data.code == roomId
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 60
+        && data.hostUid is string
+        && data.hostUid.size() >= 1
+        && data.hostUid.size() <= 128
+        && data.hostName is string
+        && data.hostName.size() >= 1
+        && data.hostName.size() <= 60
+        && data.maxMembers is int
+        && data.maxMembers >= 2
+        && data.maxMembers <= 10
+        && data.memberUids is list
+        && data.memberUids.size() >= 1
+        && data.memberUids.size() <= data.maxMembers
+        && data.hostUid in data.memberUids
+        && data.members is list
+        && data.members.size() == data.memberUids.size()
+        && data.members[0] is map
+        && (data.currentTrack == null || data.currentTrack is map)
+        && data.isPlaying is bool
+        && (data.positionSec is int || data.positionSec is float)
+        && data.positionSec >= 0
+        && data.positionSec <= 36000
+        && data.syncUpdatedAtMs is int
+        && data.syncUpdatedAtMs >= 0
+        && data.updatedByUid is string
+        && data.updatedByUid.size() >= 1
+        && data.updatedByUid.size() <= 128
+        && data.updatedByName is string
+        && data.updatedByName.size() >= 1
+        && data.updatedByName.size() <= 60
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidListenRoomMessage(data, roomId) {
+      return data.keys().hasAll([
+          'roomId',
+          'senderUid',
+          'senderName',
+          'text',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'roomId',
+          'senderUid',
+          'senderName',
+          'senderUsername',
+          'senderAvatar',
+          'isDeveloper',
+          'greenBadge',
+          'goldFrame',
+          'text',
+          'createdAt'
+        ])
+        && data.roomId is string
+        && data.roomId == roomId
+        && data.senderUid is string
+        && data.senderUid == request.auth.uid
+        && data.senderName is string
+        && data.senderName.size() >= 1
+        && data.senderName.size() <= 60
+        && (!('senderUsername' in data) || (data.senderUsername is string && data.senderUsername.size() <= 24))
+        && (!('senderAvatar' in data) || (data.senderAvatar is string && data.senderAvatar.size() <= 120000))
+        && (!('isDeveloper' in data) || (data.isDeveloper is bool && (!data.isDeveloper || isAdmin())))
+        && (!('greenBadge' in data) || data.greenBadge is bool)
+        && (!('goldFrame' in data) || data.goldFrame is bool)
+        && data.text is string
+        && data.text.size() >= 1
+        && data.text.size() <= 500
+        && data.createdAt is timestamp;
     }
 
     function isValidSupportThread(data, threadId) {
@@ -290,6 +471,11 @@ service cloud.firestore {
         && (!('badges' in incoming()) || incoming().badges.size() == 0)
         && (!('greenBadgeUnlocked' in incoming()) || incoming().greenBadgeUnlocked == false)
         && (!('greenBadgeEnabled' in incoming()) || incoming().greenBadgeEnabled == false)
+        && (!('goldFrameUnlocked' in incoming()) || incoming().goldFrameUnlocked == false)
+        && (!('goldFrameEnabled' in incoming()) || incoming().goldFrameEnabled == false)
+        && (!('recoverableStreak' in incoming()) || incoming().recoverableStreak == 0)
+        && (!('recoveryUsedTier30' in incoming()) || incoming().recoveryUsedTier30 == 0)
+        && (!('recoveryUsedTier7' in incoming()) || incoming().recoveryUsedTier7 == 0)
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
 
@@ -327,6 +513,9 @@ service cloud.firestore {
                   'badges',
                   'greenBadgeUnlocked',
                   'greenBadgeEnabled',
+                  'goldFrameUnlocked',
+                  'goldFrameEnabled',
+                  'recoverableStreak',
                   'updatedAt'
                 ])
                 && isValidStreakCheckIn(incoming(), existing())
@@ -338,6 +527,31 @@ service cloud.firestore {
                   'updatedAt'
                 ])
                 && ('greenBadgeUnlocked' in existing() && existing().greenBadgeUnlocked == true)
+              )
+              // Action 4: Toggle 60-day Gold Sovereign frame once unlocked
+              || (
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'goldFrameEnabled',
+                  'updatedAt'
+                ])
+                && ('goldFrameUnlocked' in existing() && existing().goldFrameUnlocked == true)
+              )
+              // Action 5: Streak Recovery (max 3x for >=30d, max 1x for >=7d)
+              || (
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'streakCount',
+                  'longestStreak',
+                  'badges',
+                  'greenBadgeUnlocked',
+                  'greenBadgeEnabled',
+                  'goldFrameUnlocked',
+                  'goldFrameEnabled',
+                  'recoverableStreak',
+                  'recoveryUsedTier30',
+                  'recoveryUsedTier7',
+                  'updatedAt'
+                ])
+                && isValidStreakRecovery(incoming(), existing())
               )
             )
           )
@@ -445,6 +659,113 @@ service cloud.firestore {
       allow delete: if isValidId(playlistId)
         && isVerifiedUser()
         && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    match /listenRooms/{roomId} {
+      allow get: if isValidId(roomId) && isVerifiedUser();
+      allow list: if isVerifiedUser() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isValidId(roomId)
+        && isVerifiedUser()
+        && isValidListenRoom(incoming(), roomId)
+        && incoming().hostUid == request.auth.uid
+        && incoming().updatedByUid == request.auth.uid
+        && request.auth.uid in incoming().memberUids
+        && incoming().memberUids.size() == 1
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(roomId)
+        && isVerifiedUser()
+        && isValidListenRoom(incoming(), roomId)
+        && incoming().id == existing().id
+        && incoming().code == existing().code
+        && incoming().hostUid == existing().hostUid
+        && incoming().hostName == existing().hostName
+        && incoming().maxMembers == existing().maxMembers
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().updatedByUid == request.auth.uid
+        && (
+          isAdmin()
+          // Action 1: Existing member updates track / play state / seek / room name
+          || (
+            request.auth.uid in existing().memberUids
+            && incoming().memberUids == existing().memberUids
+            && incoming().members == existing().members
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name',
+              'currentTrack',
+              'isPlaying',
+              'positionSec',
+              'syncUpdatedAtMs',
+              'updatedByUid',
+              'updatedByName',
+              'updatedAt'
+            ])
+          )
+          // Action 2: Join room up to host maxMembers capacity
+          || (
+            !(request.auth.uid in existing().memberUids)
+            && existing().memberUids.size() < existing().maxMembers
+            && request.auth.uid in incoming().memberUids
+            && incoming().memberUids.hasAll(existing().memberUids)
+            && incoming().memberUids.size() == existing().memberUids.size() + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'memberUids',
+              'members',
+              'updatedByUid',
+              'updatedByName',
+              'updatedAt'
+            ])
+          )
+          // Action 3: Non-host member leaves room
+          || (
+            request.auth.uid in existing().memberUids
+            && request.auth.uid != existing().hostUid
+            && !(request.auth.uid in incoming().memberUids)
+            && existing().memberUids.hasAll(incoming().memberUids)
+            && incoming().memberUids.size() == existing().memberUids.size() - 1
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'memberUids',
+              'members',
+              'updatedByUid',
+              'updatedByName',
+              'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isValidId(roomId)
+        && isVerifiedUser()
+        && (existing().hostUid == request.auth.uid || isAdmin());
+
+      match /messages/{messageId} {
+        allow get: if isValidId(roomId)
+          && isValidId(messageId)
+          && isVerifiedUser()
+          && (
+            isAdmin()
+            || request.auth.uid in get(/databases/$(database)/documents/listenRooms/$(roomId)).data.memberUids
+          );
+
+        allow list: if isValidId(roomId)
+          && isVerifiedUser()
+          && (
+            isAdmin()
+            || request.auth.uid in get(/databases/$(database)/documents/listenRooms/$(roomId)).data.memberUids
+          );
+
+        allow create: if isValidId(roomId)
+          && isValidId(messageId)
+          && isVerifiedUser()
+          && isValidListenRoomMessage(incoming(), roomId)
+          && incoming().createdAt == request.time
+          && existsAfter(/databases/$(database)/documents/listenRooms/$(roomId))
+          && request.auth.uid in getAfter(/databases/$(database)/documents/listenRooms/$(roomId)).data.memberUids;
+
+        allow update, delete: if false;
+      }
     }
 
     match /supportThreads/{threadId} {

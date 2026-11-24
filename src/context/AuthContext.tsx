@@ -32,6 +32,7 @@ import {
 } from '../lib/firebase';
 import {
   PROFILE_CONSTRAINTS,
+  STREAK_RECOVERY_LIMITS,
   type AppPreferences,
   type BadgeId,
   type UserProfile,
@@ -66,6 +67,11 @@ function computeBadgesForStreak(existingBadges: BadgeId[], nextStreak: number): 
   if (nextStreak >= 30) {
     set.add('streak_30_crown');
     set.add('streak_30_pioneer');
+  }
+  if (nextStreak >= 60) {
+    set.add('streak_60_aurora');
+    set.add('streak_60_virtuoso');
+    set.add('streak_60_immortal');
   }
   return Array.from(set);
 }
@@ -149,6 +155,7 @@ interface AuthContextValue {
   profileLoading: boolean;
   isDeveloper: boolean;
   showGreenCheckmark: boolean;
+  showGoldFrame: boolean;
   streakBannerMessage: string | null;
   dismissStreakBanner: () => void;
   preferences: AppPreferences;
@@ -164,6 +171,8 @@ interface AuthContextValue {
     avatarDataUrl?: string;
   }) => Promise<void>;
   toggleGreenCheckmark: (enabled: boolean) => Promise<void>;
+  toggleGoldFrame: (enabled: boolean) => Promise<void>;
+  recoverStreak: () => Promise<number>;
   syncLibraryToCloud: (data: {
     likedTracks: Track[];
     followedArtists: ArtistSummary[];
@@ -257,6 +266,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             badges: [],
             greenBadgeUnlocked: false,
             greenBadgeEnabled: false,
+            goldFrameUnlocked: false,
+            goldFrameEnabled: false,
+            recoverableStreak: 0,
+            recoveryUsedTier30: 0,
+            recoveryUsedTier7: 0,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -278,13 +292,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const prevBadges = Array.isArray(data.badges) ? (data.badges as BadgeId[]) : [];
             const prevGreenUnlocked = Boolean(data.greenBadgeUnlocked);
             const prevGreenEnabled = Boolean(data.greenBadgeEnabled);
+            const prevGoldUnlocked = Boolean(data.goldFrameUnlocked);
+            const prevGoldEnabled = Boolean(data.goldFrameEnabled);
+            const prevRecoverable = typeof data.recoverableStreak === 'number' ? data.recoverableStreak : 0;
 
-            const nextStreak = lastDate === yesterday ? prevStreak + 1 : 1;
+            const isConsecutive = lastDate === yesterday;
+            const nextStreak = isConsecutive ? prevStreak + 1 : 1;
+            const brokenRecoverable = !isConsecutive && prevStreak >= 7 ? prevStreak : prevRecoverable;
+            const nextRecoverable =
+              nextStreak >= brokenRecoverable && brokenRecoverable > 0 ? 0 : brokenRecoverable;
             const nextLongest = Math.max(prevLongest, nextStreak);
             const nextBadges = computeBadgesForStreak(prevBadges, nextStreak);
             const newlyUnlocked30 = nextStreak >= 30 && !prevGreenUnlocked;
+            const newlyUnlocked60 = nextStreak >= 60 && !prevGoldUnlocked;
             const nextGreenUnlocked = prevGreenUnlocked || nextStreak >= 30;
             const nextGreenEnabled = newlyUnlocked30 ? true : prevGreenEnabled;
+            const nextGoldUnlocked = prevGoldUnlocked || nextStreak >= 60;
+            const nextGoldEnabled = newlyUnlocked60 ? true : prevGoldEnabled;
 
             await updateDoc(docRef, {
               streakCount: nextStreak,
@@ -293,11 +317,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               badges: nextBadges,
               greenBadgeUnlocked: nextGreenUnlocked,
               greenBadgeEnabled: nextGreenEnabled,
+              goldFrameUnlocked: nextGoldUnlocked,
+              goldFrameEnabled: nextGoldEnabled,
+              recoverableStreak: nextRecoverable,
               updatedAt: serverTimestamp(),
             });
 
             if (active) {
-              if (newlyUnlocked30) {
+              if (!isConsecutive && prevStreak >= 7) {
+                setStreakBannerMessage(
+                  `Streak ${prevStreak} harimu sempat terputus — buka Profile untuk memulihkannya!`,
+                );
+              } else if (newlyUnlocked60) {
+                setStreakBannerMessage(
+                  '60-Day Streak! Unlocked 3 Immortal Badges + Gold Sovereign Frame!',
+                );
+              } else if (newlyUnlocked30) {
                 setStreakBannerMessage(
                   '30-Day Streak! Unlocked 2 Special Badges + Green Verified Checkmark!',
                 );
@@ -360,6 +395,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               badges: Array.isArray(d.badges) ? (d.badges as BadgeId[]) : [],
               greenBadgeUnlocked: Boolean(d.greenBadgeUnlocked),
               greenBadgeEnabled: Boolean(d.greenBadgeEnabled),
+              goldFrameUnlocked: Boolean(d.goldFrameUnlocked),
+              goldFrameEnabled: Boolean(d.goldFrameEnabled),
+              recoverableStreak: typeof d.recoverableStreak === 'number' ? d.recoverableStreak : 0,
+              recoveryUsedTier30: typeof d.recoveryUsedTier30 === 'number' ? d.recoveryUsedTier30 : 0,
+              recoveryUsedTier7: typeof d.recoveryUsedTier7 === 'number' ? d.recoveryUsedTier7 : 0,
             };
             setProfile(nextProfile);
             setPreferences({
@@ -527,6 +567,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user, profile?.greenBadgeUnlocked],
   );
 
+  const toggleGoldFrame = useCallback(
+    async (enabled: boolean) => {
+      if (!user) throw new Error('Sign in with Google first.');
+      if (!profile?.goldFrameUnlocked) {
+        throw new Error('Reach a 60-day consecutive login streak to unlock the Gold Sovereign Frame.');
+      }
+      const profilePath = `users/${user.uid}`;
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          goldFrameEnabled: enabled,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, profilePath);
+      }
+    },
+    [user, profile?.goldFrameUnlocked],
+  );
+
+  const recoverStreak = useCallback(async (): Promise<number> => {
+    if (!user || !profile) throw new Error('Sign in with Google first.');
+    const recoverable = profile.recoverableStreak || 0;
+    if (recoverable < 7) {
+      throw new Error('Tidak ada streak yang memenuhi syarat pemulihan (minimal 7+ hari).');
+    }
+
+    const isTier30 = recoverable >= 30;
+    const used30 = profile.recoveryUsedTier30 || 0;
+    const used7 = profile.recoveryUsedTier7 || 0;
+
+    if (isTier30 && used30 >= STREAK_RECOVERY_LIMITS.tier30Max) {
+      throw new Error('Kuota pemulihan streak 30+ hari (3x) sudah habis.');
+    }
+    if (!isTier30 && used7 >= STREAK_RECOVERY_LIMITS.tier7Max) {
+      throw new Error('Kuota pemulihan streak 7+ hari (1x) sudah habis.');
+    }
+
+    const restoredStreak = recoverable + 1;
+    const nextLongest = Math.max(profile.longestStreak || 0, restoredStreak);
+    const nextBadges = computeBadgesForStreak(profile.badges || [], restoredStreak);
+    const nextGreenUnlocked = profile.greenBadgeUnlocked || restoredStreak >= 30;
+    const nextGreenEnabled =
+      restoredStreak >= 30 && !profile.greenBadgeUnlocked ? true : profile.greenBadgeEnabled;
+    const nextGoldUnlocked = profile.goldFrameUnlocked || restoredStreak >= 60;
+    const nextGoldEnabled =
+      restoredStreak >= 60 && !profile.goldFrameUnlocked ? true : profile.goldFrameEnabled;
+
+    const profilePath = `users/${user.uid}`;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        streakCount: restoredStreak,
+        longestStreak: nextLongest,
+        badges: nextBadges,
+        greenBadgeUnlocked: nextGreenUnlocked,
+        greenBadgeEnabled: nextGreenEnabled,
+        goldFrameUnlocked: nextGoldUnlocked,
+        goldFrameEnabled: nextGoldEnabled,
+        recoverableStreak: 0,
+        recoveryUsedTier30: isTier30 ? used30 + 1 : used30,
+        recoveryUsedTier7: !isTier30 ? used7 + 1 : used7,
+        updatedAt: serverTimestamp(),
+      });
+      setStreakBannerMessage(`Streak berhasil dipulihkan menjadi ${restoredStreak} hari!`);
+      return restoredStreak;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, profilePath);
+    }
+  }, [user, profile]);
+
   const syncLibraryToCloud = useCallback(
     async (data: {
       likedTracks: Track[];
@@ -583,6 +692,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [profile?.greenBadgeUnlocked, profile?.greenBadgeEnabled],
   );
 
+  const showGoldFrame = useMemo(
+    () => Boolean(profile?.goldFrameUnlocked && profile?.goldFrameEnabled),
+    [profile?.goldFrameUnlocked, profile?.goldFrameEnabled],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -591,6 +705,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileLoading,
       isDeveloper,
       showGreenCheckmark,
+      showGoldFrame,
       streakBannerMessage,
       dismissStreakBanner,
       preferences,
@@ -601,6 +716,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updatePreferences,
       updateProfileFields,
       toggleGreenCheckmark,
+      toggleGoldFrame,
+      recoverStreak,
       syncLibraryToCloud,
       fetchLibraryFromCloud,
     }),
@@ -611,6 +728,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileLoading,
       isDeveloper,
       showGreenCheckmark,
+      showGoldFrame,
       streakBannerMessage,
       dismissStreakBanner,
       preferences,
@@ -621,6 +739,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updatePreferences,
       updateProfileFields,
       toggleGreenCheckmark,
+      toggleGoldFrame,
+      recoverStreak,
       syncLibraryToCloud,
       fetchLibraryFromCloud,
     ],

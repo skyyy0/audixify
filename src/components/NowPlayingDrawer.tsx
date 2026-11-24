@@ -25,6 +25,7 @@ import {
   Sliders,
   Sparkles,
   Trash2,
+  Waves,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -110,6 +111,7 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
   const [sleepMenuOpen, setSleepMenuOpen] = useState(false);
   const [shareLyricsOpen, setShareLyricsOpen] = useState(false);
   const [shareInitialLine, setShareInitialLine] = useState(0);
+  const [showVisualizer, setShowVisualizer] = useState(true);
 
   const activeLineRef = useRef<HTMLButtonElement | null>(null);
   const lyricsBoxRef = useRef<HTMLDivElement | null>(null);
@@ -469,7 +471,6 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                           ) : (
                             <span>Connecting audio stream...</span>
                           )}
-                          <LiveSpectrumBars />
                         </div>
                       )}
                     </div>
@@ -531,6 +532,19 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setShowVisualizer((v) => !v)}
+                        title="Toggle Live Audio Visualizer"
+                        aria-label="Toggle Live Audio Visualizer"
+                        className={`p-2 rounded-full ios-glass-pill active:scale-90 transition-all ${
+                          showVisualizer
+                            ? 'text-[#FF4D2E]'
+                            : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Waves className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={handleShareTrack}
                         aria-label="Share current track"
                         className="p-2 rounded-full ios-glass-pill text-zinc-500 hover:text-zinc-900 dark:hover:text-white active:scale-90 transition-all"
@@ -542,6 +556,10 @@ export function NowPlayingDrawer({ onArtistClick }: NowPlayingDrawerProps) {
 
                   {mediaMode === 'audio' && (
                     <>
+                      {showVisualizer && (
+                        <LiveSpectrumBars variant="stage" active={nowPlayingOpen} />
+                      )}
+
                       {/* Scrubber */}
                       <div className="space-y-2">
                         <input
