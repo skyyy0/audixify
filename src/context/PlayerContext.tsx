@@ -152,6 +152,7 @@ interface YTPlayerInstance {
   getCurrentTime: () => number;
   getDuration: () => number;
   getPlayerState: () => number;
+  getVideoData?: () => { video_id?: string };
   loadVideoById: (videoId: string) => void;
   destroy: () => void;
 }
@@ -237,11 +238,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const ytSinkRef = useRef<HTMLDivElement | null>(null);
+  const ytSinkHostRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayerInstance | null>(null);
   const ytActiveRef = useRef(false);
   const ytPollTimerRef = useRef<number | null>(null);
   const ytFallbackQueueRef = useRef<string[]>([]);
   const ytExpectedSeqRef = useRef(0);
+  const ytCurrentVideoIdRef = useRef<string>('');
   const eqEngineRef = useRef<WebAudioEqualizerEngine | null>(null);
   const requestSeqRef = useRef(0);
   const mvSeqRef = useRef(0);
@@ -435,6 +438,38 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Tear the YT player down completely (not just stopVideo). The YouTube IFrame
+  // API replaces the host <div> with its own <iframe>; if we leave that iframe
+  // attached, Chrome keeps the embedded player (and its audio pipeline) alive
+  // after the app has moved on, which leaves a dead/zombie media session behind
+  // and can wedge the browser tab on exit.
+  const destroyYtPlayer = useCallback(() => {
+    stopYtPolling();
+    ytActiveRef.current = false;
+    ytFallbackQueueRef.current = [];
+    const player = ytPlayerRef.current;
+    ytPlayerRef.current = null;
+    if (player) {
+      try {
+        player.stopVideo();
+      } catch {}
+      try {
+        player.destroy();
+      } catch {}
+    }
+    // The API swapped our sink <div> for an <iframe>, so the sink node itself
+    // is already detached. Clear the host container to drop the leftover
+    // iframe (and its media session) instead of trying to remove the sink.
+    const host = ytSinkHostRef.current;
+    if (host) {
+      try {
+        host.replaceChildren();
+      } catch {}
+    }
+    ytSinkRef.current = null;
+    ytCurrentVideoIdRef.current = '';
+  }, [stopYtPolling]);
+
   const stopYtPlayer = useCallback(() => {
     stopYtPolling();
     ytActiveRef.current = false;
@@ -455,12 +490,64 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         window.cancelAnimationFrame(fadeRafRef.current);
       }
       stopYtPolling();
+      // Mark inactive BEFORE destroying: destroy() fires onStateChange(ENDED),
+      // which would otherwise call nextTrack() during teardown and start an
+      // unwanted track.
+      ytActiveRef.current = false;
+      try {
+        ytPlayerRef.current?.stopVideo();
+      } catch {}
       try {
         ytPlayerRef.current?.destroy();
       } catch {}
+      ytPlayerRef.current = null;
+      const host = ytSinkHostRef.current;
+      if (host) {
+        try {
+          host.replaceChildren();
+        } catch {}
+      }
+      ytSinkRef.current = null;
+      ytCurrentVideoIdRef.current = '';
       eqEngineRef.current?.dispose();
     };
   }, [stopYtPolling]);
+
+  // Chrome (desktop + Android) can keep the embedded YouTube player alive after
+  // the page is closed/navigated away, which leaves a zombie media session:
+  // the audio keeps playing (or gets stuck) and Chrome's media controls go
+  // dead. Tear the player down when the page actually goes away so
+  // "keluar dari Chrome" always stops the stream cleanly.
+  //
+  // NOTE: we deliberately do NOT tear down on 'visibilitychange'. Switching
+  // tabs/app must not stop the music — background playback is expected.
+  useEffect(() => {
+    const handleTeardown = () => {
+      ytActiveRef.current = false;
+      try {
+        ytPlayerRef.current?.stopVideo();
+      } catch {}
+      try {
+        ytPlayerRef.current?.destroy();
+      } catch {}
+      ytPlayerRef.current = null;
+      const host = ytSinkHostRef.current;
+      if (host) {
+        try {
+          host.replaceChildren();
+        } catch {}
+      }
+      ytSinkRef.current = null;
+      ytCurrentVideoIdRef.current = '';
+    };
+
+    window.addEventListener('pagehide', handleTeardown);
+    window.addEventListener('beforeunload', handleTeardown);
+    return () => {
+      window.removeEventListener('pagehide', handleTeardown);
+      window.removeEventListener('beforeunload', handleTeardown);
+    };
+  }, []);
 
   const cancelVolumeFade = useCallback(() => {
     if (fadeRafRef.current !== null) {
@@ -646,6 +733,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
         if (ytPlayerRef.current) {
           syncYtControls(ytPlayerRef.current);
+          ytCurrentVideoIdRef.current = videoId;
           ytPlayerRef.current.loadVideoById(videoId);
           if (startPaused || mediaModeRef.current === 'video') {
             ytPlayerRef.current.pauseVideo();
@@ -654,11 +742,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (!ytSinkRef.current) {
+        // The YouTube IFrame API REPLACES the element you hand it with its own
+        // <iframe> (the original node ends up detached from the DOM). So the
+        // sink div we rendered earlier is gone by the time we need a player
+        // again. Render a fresh, attached sink for every new player instead of
+        // reusing the stale one — otherwise the iframe is created inside a
+        // detached subtree, the player never renders, and audio stays silent.
+        const host = ytSinkHostRef.current;
+        if (!host) {
           throw new Error('Audio output container unavailable');
         }
 
-        ytPlayerRef.current = new YT.Player(ytSinkRef.current, {
+        host.replaceChildren();
+        const sink = document.createElement('div');
+        sink.setAttribute('data-yt-sink', '1');
+        host.appendChild(sink);
+        ytSinkRef.current = sink;
+        ytCurrentVideoIdRef.current = videoId;
+
+        ytPlayerRef.current = new YT.Player(sink, {
           width: 240,
           height: 135,
           videoId,
@@ -690,6 +792,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             },
             onStateChange: (e) => {
               if (!ytActiveRef.current || ytExpectedSeqRef.current !== requestSeqRef.current) return;
+              // Ignore events that belong to a video we already moved on from.
+              // stopVideo()/loadVideoById() fire late state changes; without this
+              // guard a stale ENDED event triggers nextTrack() and the audio
+              // appears to die mid-track.
+              const activeVideoId = e.target.getVideoData?.()?.video_id;
+              if (activeVideoId && ytCurrentVideoIdRef.current && activeVideoId !== ytCurrentVideoIdRef.current) {
+                return;
+              }
               if (e.data === 1) {
                 syncYtControls(e.target);
                 const d = e.target.getDuration() || 0;
@@ -722,6 +832,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               if (!ytActiveRef.current || ytExpectedSeqRef.current !== requestSeqRef.current) return;
               const nextVid = ytFallbackQueueRef.current.shift();
               if (nextVid && ytPlayerRef.current) {
+                ytCurrentVideoIdRef.current = nextVid;
                 ytPlayerRef.current.loadVideoById(nextVid);
                 return;
               }
@@ -877,6 +988,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        // Source is not YouTube Music: fully tear the YT player down so no
+        // zombie iframe (and its media session) is left behind in the page.
+        destroyYtPlayer();
+
         if (resolved.mode === 'hls') {
           const { default: HlsLib } = await import('hls.js');
           if (seq !== requestSeqRef.current) return;
@@ -957,6 +1072,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [
       cancelVolumeFade,
       destroyHls,
+      destroyYtPlayer,
       fetchMvForTrack,
       recordRecent,
       startYtPlayback,
@@ -1309,6 +1425,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         : [],
     });
 
+    // Keep the OS/Chrome media controls in sync with the real playback state.
+    // Without this, Chrome can keep showing "playing" after the stream ended
+    // and the media controls stop responding (the "Chrome music mati" case).
+    try {
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    } catch {}
+
     navigator.mediaSession.setActionHandler('play', () => {
       if (ytActiveRef.current && ytPlayerRef.current) {
         ytPlayerRef.current.playVideo();
@@ -1325,7 +1448,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     });
     navigator.mediaSession.setActionHandler('previoustrack', () => prevTrack());
     navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
-  }, [currentTrack, prevTrack, nextTrack]);
+  }, [currentTrack, prevTrack, nextTrack, isPlaying]);
+
+  // Release the media session when the app is torn down so Chrome/OS media
+  // controls do not keep a dead "Audixify" entry around.
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    return () => {
+      try {
+        navigator.mediaSession.playbackState = 'none';
+        navigator.mediaSession.metadata = null;
+      } catch {}
+    };
+  }, []);
 
   const togglePlayPause = useCallback(() => {
     const audio = audioRef.current;
@@ -1863,7 +1998,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           aria-hidden="true"
           className="fixed -left-[9999px] -top-[9999px] w-[240px] h-[135px] opacity-0 pointer-events-none overflow-hidden"
         >
-          <div ref={ytSinkRef} />
+          <div ref={ytSinkHostRef} />
         </div>
         {children}
       </PlayerProgressContext.Provider>
