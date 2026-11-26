@@ -116,10 +116,12 @@ export interface AlbumDetailPayload {
 
 export interface StreamResolution {
   streamUrl: string;
-  mode: 'hls' | 'audio';
-  source: 'soundcloud' | 'jiosaavn' | 'preview';
+  mode: 'hls' | 'audio' | 'ytmusic';
+  source: 'soundcloud' | 'jiosaavn' | 'dailymotion' | 'bilibili' | 'ytmusic' | 'preview';
   fullLength: boolean;
   durationSec?: number;
+  videoId?: string;
+  fallbackVideoIds?: string[];
 }
 
 export interface MusicVideoResult {

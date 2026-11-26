@@ -113,10 +113,10 @@ export class WebAudioEqualizerEngine {
   private preampNode: GainNode | null = null;
   private filters: BiquadFilterNode[] = [];
   private analyser: AnalyserNode | null = null;
-  private attachedEl: HTMLAudioElement | null = null;
+  private attachedEl: HTMLMediaElement | null = null;
   private failed = false;
 
-  public ensureInitialized(audioEl: HTMLAudioElement): boolean {
+  public ensureInitialized(audioEl: HTMLMediaElement): boolean {
     if (this.failed) return false;
     if (this.ctx && this.attachedEl === audioEl) {
       if (this.ctx.state === 'suspended') {

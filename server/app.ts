@@ -260,6 +260,7 @@ export function createApiApp(): express.Express {
       const durationSec = Number(req.query.durationSec || 0) || 0;
       const scTrackId = Number(req.query.scTrackId || 0) || undefined;
       const previewUrl = req.query.previewUrl ? String(req.query.previewUrl) : undefined;
+      const preferYtMusic = req.query.preferYtMusic === '1';
 
       if (!title || !artist) {
         res.status(400).json({ error: 'Track title and artist are required' });
@@ -272,6 +273,7 @@ export function createApiApp(): express.Express {
         durationSec,
         scTrackId,
         previewUrl,
+        preferYtMusic,
       });
       res.json({
         ...stream,
@@ -415,9 +417,17 @@ export function createApiApp(): express.Express {
       activeTranscodes.set(hash, currentJob);
       job = currentJob;
 
-      const ff = spawn('ffmpeg', [
+      const targetHost = new URL(targetUrl).hostname.toLowerCase();
+      const ffArgs: string[] = [
         '-loglevel',
         'error',
+        '-user_agent',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      ];
+      if (targetHost.endsWith('dailymotion.com') || targetHost.endsWith('dmcdn.net')) {
+        ffArgs.push('-headers', 'Referer: https://www.dailymotion.com/\r\n');
+      }
+      ffArgs.push(
         '-y',
         '-i',
         targetUrl,
@@ -429,7 +439,9 @@ export function createApiApp(): express.Express {
         '-f',
         'mp3',
         'pipe:1',
-      ]);
+      );
+
+      const ff = spawn('ffmpeg', ffArgs);
 
       const cleanupPart = () => {
         try {
@@ -555,11 +567,16 @@ export function createApiApp(): express.Express {
     }
 
     try {
+      const targetHost = new URL(targetUrl).hostname.toLowerCase();
+      const upstreamHeaders: Record<string, string> = {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      };
+      if (targetHost.endsWith('dailymotion.com') || targetHost.endsWith('dmcdn.net')) {
+        upstreamHeaders.Referer = 'https://www.dailymotion.com/';
+      }
       const upstream = await fetch(targetUrl, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        },
+        headers: upstreamHeaders,
         signal: AbortSignal.timeout(15000),
       });
 
@@ -645,10 +662,20 @@ export function createApiApp(): express.Express {
     }
 
     try {
+      const targetHost = new URL(targetUrl).hostname.toLowerCase();
       const headers: Record<string, string> = {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       };
+      if (
+        targetHost.endsWith('bilivideo.com') ||
+        targetHost.endsWith('bilivideo.cn') ||
+        targetHost.endsWith('biliapi.net') ||
+        targetHost.endsWith('hdslb.com') ||
+        (targetHost.startsWith('upos-') && targetHost.endsWith('akamaized.net'))
+      ) {
+        headers.Referer = 'https://www.bilibili.com/';
+      }
       if (req.headers.range) {
         headers.Range = req.headers.range;
       }

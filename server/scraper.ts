@@ -115,6 +115,11 @@ const ALLOWED_MEDIA_HOST_SUFFIXES = [
   'deezer.com',
   'dailymotion.com',
   'dmcdn.net',
+  'bilivideo.com',
+  'bilivideo.cn',
+  'biliapi.net',
+  'hdslb.com',
+  'akamaized.net',
 ];
 
 export function isValidExternalMediaUrl(rawUrl: string): boolean {
@@ -148,6 +153,7 @@ export function isValidExternalMediaUrl(rawUrl: string): boolean {
 
 function normalizeText(value: string): string {
   return value
+    .normalize('NFKC')
     .toLowerCase()
     .replace(/\([^)]*\)/g, ' ')
     .replace(/\[[^\]]*\]/g, ' ')
@@ -533,7 +539,19 @@ interface SoundCloudTrack {
   artwork_url?: string | null;
   policy?: string;
   genre?: string;
-  user?: { username?: string; avatar_url?: string };
+  tag_list?: string;
+  description?: string;
+  publisher_metadata?: {
+    artist?: string;
+    release_title?: string;
+  };
+  playback_count?: number;
+  likes_count?: number;
+  user?: {
+    username?: string;
+    avatar_url?: string;
+    verified?: boolean;
+  };
   media?: { transcodings?: SoundCloudTranscoding[] };
 }
 
@@ -586,11 +604,15 @@ async function getSoundCloudClientId(forceRefresh = false): Promise<string> {
   return task;
 }
 
-async function searchSoundCloudRaw(query: string, limit = 10): Promise<SoundCloudTrack[]> {
+async function searchSoundCloudRaw(
+  query: string,
+  limit = 15,
+  offset = 0,
+): Promise<SoundCloudTrack[]> {
   let cid = await getSoundCloudClientId(false);
   const doSearch = async (clientId: string) =>
     fetchJson<{ collection?: SoundCloudTrack[] }>(
-      `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${clientId}&limit=${limit}`,
+      `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${clientId}&limit=${limit}&offset=${offset}`,
       undefined,
       5000,
     );
@@ -634,6 +656,119 @@ async function scrapeSoundCloudTracks(
 }
 
 // ============================================================================
+// Version Authenticity & Unofficial Edit / DJ / Remix Detection
+// ============================================================================
+
+function normalizeForModifierCheck(raw: string): string {
+  return ` ${raw
+    .toLowerCase()
+    .replace(/[_+\-./()[\]{}|#!?,:;'"~]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()} `;
+}
+
+const UNWANTED_VERSION_RULES: Array<{ allowPattern: RegExp; rejectPattern: RegExp }> = [
+  { allowPattern: /\bdj\b/, rejectPattern: /\bdj\b|\bd j\b/ },
+  { allowPattern: /\bjedag\b|\bjedug\b|\bjj\b/, rejectPattern: /\bjedag\b|\bjedug\b|\bjedagjedug\b|\bjj\b/ },
+  { allowPattern: /\bhoreg\b|\bglerr?\b|\bfull bass\b/, rejectPattern: /\bhoreg\b|\bglerr?\b|\bfull bass\b|\bbass gler\b|\bbass boosted\b|\bbassboosted\b/ },
+  { allowPattern: /\bfunkot\b|\bbreakbeat\b/, rejectPattern: /\bfunkot\b|\bbreakbeat\b|\bbrkbt\b/ },
+  { allowPattern: /\bremix\b|\bre?mixed\b/, rejectPattern: /\bremix(?:es|ed|ing)?\b|\brmx\b|\bmegamix\b|\bclub mix\b|\bvip mix\b|\bparty mix\b|\bextended mix\b/ },
+  { allowPattern: /\bbootleg\b|\bmashup\b|\bmedley\b/, rejectPattern: /\bbootleg\b|\bmashup\b|\bmash up\b|\bmedley\b/ },
+  { allowPattern: /\bedit\b/, rejectPattern: /\bedit\b|\brecut\b|\bre cut\b|\brefix\b|\brework\b|\bremake\b|\bremade\b|\bflip\b/ },
+  { allowPattern: /\bextended\b/, rejectPattern: /\bextended\b|\b1 ?hour\b|\b10 ?hour\b|\b1 ?jam\b|\bloop\b|\bfull album\b/ },
+  { allowPattern: /\bcover\b/, rejectPattern: /\bcover(?:ed|s)?\b|\btribute\b|\bparod[yi]\b/ },
+  { allowPattern: /\bkaraoke\b|\binstrumental\b/, rejectPattern: /\bkaraoke\b|\binstrumental\b|\bminus one\b|\bno vocals?\b|\bbacking track\b|\bacapella\b|\ba capella\b/ },
+  { allowPattern: /\bpiano\b|\bguitar\b|\bviolin\b|\bsax\b/, rejectPattern: /\bpiano\b|\bguitar\b|\bgitar\b|\bviolin\b|\bbiola\b|\bsaxophone\b|\bsax\b|\bukulele\b|\borchestra\b/ },
+  { allowPattern: /\bacoustic\b|\bakustik\b|\bunplugged\b/, rejectPattern: /\bacoustic\b|\bakustik\b|\bunplugged\b/ },
+  { allowPattern: /\blive\b/, rejectPattern: /\blive\b|\bkonser\b|\bconcert\b/ },
+  { allowPattern: /\bpunk\b|\bpop punk\b/, rejectPattern: /\bpop punk\b|\bpunk\b|\brock version\b|\bmetal version\b/ },
+  { allowPattern: /\bkoplo\b|\bdangdut\b/, rejectPattern: /\bkoplo\b|\bdangdut\b/ },
+  { allowPattern: /\bamapiano\b|\breggae\b|\bska\b|\bkeroncong\b|\bsholawat\b|\bangklung\b|\bgamelan\b/, rejectPattern: /\bamapiano\b|\breggae\b|\bska\b|\bkeroncong\b|\bsholawat\b|\bangklung\b|\bgamelan\b/ },
+  { allowPattern: /\bslowed\b|\breverb\b/, rejectPattern: /\bslowed\b|\breverb(?:ed)?\b|\bmellow\b/ },
+  { allowPattern: /\bsped up\b|\bspeed up\b|\bnightcore\b/, rejectPattern: /\bsped up\b|\bspeed up\b|\bspedups\b|\bnightcore\b|\bchipmunk\b|\bpitch(?:ed)?\b/ },
+  { allowPattern: /\b8d\b|\b16d\b|\b32d\b/, rejectPattern: /\b8d\b|\b16d\b|\b32d\b/ },
+  { allowPattern: /\blofi\b|\blo fi\b/, rejectPattern: /\blofi\b|\blo fi\b/ },
+  { allowPattern: /\btiktok\b|\btik tok\b|\bfyp\b/, rejectPattern: /\btik ?tok\b|\bfyp\b|\bfypp\b|\bfree dl\b|\bdownload\b|\bteaser\b|\bsnippet\b/ },
+  { allowPattern: /\bversion\b|\bversi\b/, rejectPattern: /\bversi\b|\bversion\b/ },
+  { allowPattern: /\btechno\b|\bhardstyle\b|\bdubstep\b|\bhouse\b|\btrance\b|\bdrill\b/, rejectPattern: /\btechno\b|\bhardstyle\b|\bdubstep\b|\bhouse mix\b|\btrance\b|\bdrill\b/ },
+];
+
+function hasUnwantedVersionMarker(
+  candidateTitle: string,
+  candidateUser: string,
+  candidateExtra: string,
+  targetTitle: string,
+  targetArtist: string,
+): boolean {
+  const targetCheck = normalizeForModifierCheck(`${targetTitle} ${targetArtist}`);
+  const candCheck = normalizeForModifierCheck(`${candidateTitle} ${candidateUser} ${candidateExtra}`);
+
+  for (const rule of UNWANTED_VERSION_RULES) {
+    if (rule.rejectPattern.test(candCheck) && !rule.allowPattern.test(targetCheck)) {
+      return true;
+    }
+  }
+
+  // Catch mashup patterns like "Song A x Song B" or "CoverArtist - Title (by. OrigArtist)"
+  if (
+    (/\s[x+]\s/i.test(candidateTitle) && !/\s[x+]\s/i.test(`${targetTitle} ${targetArtist}`)) ||
+    /\(\s*(?:by\.?|orig(?:inally)?\s+by)\b/i.test(candidateTitle)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+const UNWANTED_DESCRIPTION_REGEX =
+  /\b(dj\b|jedag|jedug|funkot|breakbeat|remix(?:es|ed|ing)?|bootleg|mashup|karaoke|instrumental|minus one|slowed|sped up|speed up|nightcore|cover by|covered by|my cover|guitar cover|piano cover|acoustic cover|akustik cover|version from me|versi saya|tiktok remix|amapiano|koplo)\b/i;
+
+function hasUnwantedDescriptionMarker(
+  description: string,
+  targetTitle: string,
+  targetArtist: string,
+): boolean {
+  if (!description) return false;
+  const normalizedDesc = normalizeForModifierCheck(description.slice(0, 300));
+  const match = normalizedDesc.match(UNWANTED_DESCRIPTION_REGEX);
+  if (!match) return false;
+  const targetCheck = normalizeForModifierCheck(`${targetTitle} ${targetArtist}`);
+  const hit = match[1].toLowerCase();
+  return !targetCheck.includes(` ${hit} `);
+}
+
+const UNWANTED_GENRE_REGEX =
+  /\b(dj|remix|karaoke|piano|amapiano|reggae|hardstyle|dubstep|drum\s*&\s*bass|house|techno|trance|dancehall)\b/i;
+
+const SAFE_CATALOG_EXTRA_TOKENS = new Set([
+  'official',
+  'audio',
+  'music',
+  'video',
+  'lyric',
+  'lyrics',
+  'lirik',
+  'hd',
+  'hq',
+  'full',
+  'mp3',
+  'm4a',
+  'wav',
+  'original',
+  'album',
+  'single',
+  'band',
+  'explicit',
+  'clean',
+  'feat',
+  'ft',
+  'featuring',
+  'the',
+  'and',
+  'new',
+]);
+
+// ============================================================================
 // JioSaavn Fallback Full-Track Resolver (320/160kbps AAC/MP4)
 // ============================================================================
 
@@ -649,6 +784,7 @@ interface SaavnDetailResult {
   [id: string]: {
     song?: string;
     primary_artists?: string;
+    singers?: string;
     duration?: string;
     encrypted_media_url?: string;
     '320kbps'?: string;
@@ -664,49 +800,88 @@ function decryptSaavnMediaUrl(encrypted: string): string {
   return decrypted.replace('_96.mp4', '_160.mp4').replace('http://', 'https://');
 }
 
+function splitArtistNames(raw: string): string[] {
+  return raw
+    .split(/,|&|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\/|×|\sx\s/i)
+    .map((s) => normalizeText(s))
+    .filter(Boolean);
+}
+
 async function resolveJioSaavnStream(title: string, artist: string, expectedDur: number): Promise<StreamResolution | null> {
   try {
-    const query = `${title} ${artist.split(/,|&/)[0]}`.trim();
+    const primaryArtist = artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || artist;
+    const query = `${title} ${primaryArtist}`.trim();
     const sr = await fetchJson<SaavnSearchResult>(
       `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&ctx=web6dot0&q=${encodeURIComponent(query)}`,
       undefined,
-      6000,
+      5500,
     );
-    const first = sr.results?.[0];
-    if (!first?.id) return null;
+    const ids = (sr.results ?? [])
+      .map((r) => r.id)
+      .filter(Boolean)
+      .slice(0, 8);
+    if (ids.length === 0) return null;
 
     const detail = await fetchJson<SaavnDetailResult>(
-      `https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0%3F_marker%3D0&_format=json&pids=${encodeURIComponent(first.id)}`,
+      `https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0%3F_marker%3D0&_format=json&pids=${encodeURIComponent(ids.join(','))}`,
       undefined,
-      6000,
+      5500,
     );
-    const item = detail[first.id];
-    if (!item?.encrypted_media_url) return null;
 
-    const dur = Number(item.duration || 0);
-    if (expectedDur > 0 && dur > 0 && Math.abs(dur - expectedDur) > 45) {
-      return null;
+    const targetTitleNorm = normalizeText(title);
+    const targetTitleTokens = targetTitleNorm.split(' ').filter((w) => w.length >= 2);
+    const targetArtistNorm = normalizeText(primaryArtist);
+    const targetArtistTokens = targetArtistNorm.split(' ').filter((w) => w.length >= 2);
+
+    for (const id of ids) {
+      const item = detail[id];
+      if (!item?.encrypted_media_url || !item.song) continue;
+
+      const dur = Number(item.duration || 0);
+      if (expectedDur > 40 && dur > 40 && Math.abs(dur - expectedDur) > 25) {
+        continue;
+      }
+
+      const candTitleRaw = item.song;
+      const candArtistsRaw = `${item.primary_artists || ''} ${item.singers || ''}`.trim();
+      if (hasUnwantedVersionMarker(candTitleRaw, candArtistsRaw, '', title, artist)) {
+        continue;
+      }
+
+      const candTitleNorm = normalizeText(candTitleRaw);
+      const candTitleWords = candTitleNorm.split(' ').filter(Boolean);
+      const titleExact = candTitleNorm === targetTitleNorm;
+      const titleMatched =
+        titleExact ||
+        (targetTitleTokens.length > 0 &&
+          targetTitleTokens.every((tok) => candTitleWords.includes(tok)));
+      if (!titleMatched) continue;
+
+      // Reject unrelated cover artists: primary artist MUST match JioSaavn credits
+      const candArtistNorm = normalizeText(candArtistsRaw);
+      const candArtistNames = splitArtistNames(candArtistsRaw);
+      const artistMatched =
+        candArtistNames.includes(targetArtistNorm) ||
+        (targetArtistTokens.length > 0 &&
+          targetArtistTokens.every((tok) => candArtistNorm.split(' ').includes(tok)));
+      if (!artistMatched) continue;
+
+      let url = decryptSaavnMediaUrl(item.encrypted_media_url);
+      if (item['320kbps'] === 'true') {
+        url = url.replace('_160.mp4', '_320.mp4');
+      }
+      if (!isValidExternalMediaUrl(url)) continue;
+
+      return {
+        streamUrl: `/api/audio-proxy?url=${encodeURIComponent(url)}`,
+        mode: 'audio',
+        source: 'jiosaavn',
+        fullLength: true,
+        durationSec: dur || expectedDur,
+      };
     }
 
-    const titleNorm = normalizeText(title);
-    const candNorm = normalizeText(item.song || '');
-    if (!candNorm.includes(titleNorm.split(' ')[0] || '') && !titleNorm.includes(candNorm.split(' ')[0] || '')) {
-      return null;
-    }
-
-    let url = decryptSaavnMediaUrl(item.encrypted_media_url);
-    if (item['320kbps'] === 'true') {
-      url = url.replace('_160.mp4', '_320.mp4');
-    }
-    if (!isValidExternalMediaUrl(url)) return null;
-
-    return {
-      streamUrl: `/api/audio-proxy?url=${encodeURIComponent(url)}`,
-      mode: 'audio',
-      source: 'jiosaavn',
-      fullLength: true,
-      durationSec: dur || expectedDur,
-    };
+    return null;
   } catch {
     return null;
   }
@@ -715,25 +890,6 @@ async function resolveJioSaavnStream(title: string, artist: string, expectedDur:
 // ============================================================================
 // Smart Full-Track Stream Resolution
 // ============================================================================
-
-const UNWANTED_MODIFIER_WORDS = [
-  '1 hour',
-  '10 hour',
-  'loop',
-  'slowed',
-  'reverb',
-  'sped up',
-  'nightcore',
-  '8d',
-  'karaoke',
-  'instrumental',
-  'cover',
-  'pop punk',
-  'koplo version',
-  'remix',
-  'dj ',
-  'tiktok',
-];
 
 function isPlayableScTranscoding(tr: SoundCloudTranscoding): boolean {
   const proto = (tr.format?.protocol || '').toLowerCase();
@@ -752,65 +908,169 @@ function isPlayableScTranscoding(tr: SoundCloudTranscoding): boolean {
   return proto === 'progressive' || proto === 'hls';
 }
 
-function scoreSoundCloudCandidate(cand: SoundCloudTrack, title: string, artist: string, expectedDur: number): number {
+function scoreSoundCloudCandidate(
+  cand: SoundCloudTrack,
+  title: string,
+  artist: string,
+  expectedDur: number,
+): number {
   const transcodings = cand.media?.transcodings ?? [];
   if (!transcodings.some(isPlayableScTranscoding) || cand.policy === 'BLOCK') return -1000;
-
-  let score = 0;
-  const candTitle = normalizeText(cand.title || '');
-  const candUser = normalizeText(cand.user?.username || '');
-  const targetTitle = normalizeText(title);
-  const targetArtist = normalizeText(artist.split(/,|&|feat\.|ft\./i)[0] || artist);
+  if (cand.policy === 'SNIP') return -1000;
 
   const durSec = Math.round((cand.duration || 0) / 1000);
+  if (durSec <= 40 || durSec > 600) return -1000;
 
-  // Full length vs 30s snippet
-  if (cand.policy === 'ALLOW' || cand.policy === 'MONETIZE') {
-    score += 40;
-  } else if (cand.policy === 'SNIP' || durSec <= 35) {
-    score -= 90;
-  }
-
-  if (durSec >= 60 && durSec <= 600) {
-    score += 25;
-  } else if (durSec > 900) {
-    score -= 120; // Avoid 1-hour loops or DJ sets
-  }
-
-  // Duration closeness to canonical catalog duration
-  if (expectedDur > 40 && durSec > 40) {
-    const diff = Math.abs(durSec - expectedDur);
-    if (diff <= 5) score += 60;
-    else if (diff <= 15) score += 45;
-    else if (diff <= 30) score += 20;
-    else if (diff > 60) score -= 45;
-  }
-
-  // Title & Artist overlap
-  const titleTokens = targetTitle.split(' ').filter((w) => w.length > 1);
-  const matchedTokens = titleTokens.filter((w) => candTitle.includes(w));
-  if (titleTokens.length > 0) {
-    score += Math.round((matchedTokens.length / titleTokens.length) * 50);
-  }
-  if (candTitle === targetTitle || candTitle.includes(`${targetArtist} ${targetTitle}`)) {
-    score += 25;
-  }
-  if (targetArtist && (candTitle.includes(targetArtist) || candUser.includes(targetArtist))) {
-    score += 30;
-  }
-
-  // Penalize unwanted edits unless target title explicitly mentions them
-  const rawLower = (cand.title || '').toLowerCase();
-  const targetLower = title.toLowerCase();
-  for (const mod of UNWANTED_MODIFIER_WORDS) {
-    if (rawLower.includes(mod) && !targetLower.includes(mod)) {
-      score -= 45;
+  // Hard duration window check when canonical track duration is known (±8%, clamped 10s..18s)
+  if (expectedDur > 45) {
+    const maxAllowedDiff = Math.min(18, Math.max(10, Math.round(expectedDur * 0.08)));
+    if (Math.abs(durSec - expectedDur) > maxAllowedDiff) {
+      return -1000;
     }
   }
 
-  // Slight preference for tracks with non-snipped playable progressive or AAC HLS transcoding
+  // Hard reject DJ / remix / jedag-jedug / slowed / sped-up / cover / karaoke / mashup uploads
+  if (
+    hasUnwantedVersionMarker(
+      cand.title || '',
+      cand.user?.username || '',
+      cand.tag_list || '',
+      title,
+      artist,
+    ) ||
+    hasUnwantedDescriptionMarker(cand.description || '', title, artist)
+  ) {
+    return -1000;
+  }
+
+  const targetArtistList = splitArtistNames(artist);
+  const primaryArtistNorm = targetArtistList[0] || normalizeText(artist);
+  const candTitleNorm = normalizeText(cand.title || '');
+  const candUserNorm = normalizeText(cand.user?.username || '');
+  const candPubArtistNorm = normalizeText(cand.publisher_metadata?.artist || '');
+  const targetTitleNorm = normalizeText(title);
+
+  const isArtistOwned = Boolean(
+    cand.user?.verified ||
+      (primaryArtistNorm &&
+        (candUserNorm === primaryArtistNorm || candPubArtistNorm === primaryArtistNorm)),
+  );
+
+  // Reject ultra-low-play third-party bedroom covers/bootlegs masquerading with original titles
+  if (!isArtistOwned && (cand.playback_count ?? 0) < 600) {
+    return -1000;
+  }
+
+  // When canonical duration is unknown, reject short 60s TikTok clips from unverified third parties
+  if (expectedDur <= 45 && durSec < 105 && !isArtistOwned) {
+    return -1000;
+  }
+
+  // Check genre: reject EDM/remix/karaoke/reggae genre tags unless target artist matches or verified
+  const genreStr = (cand.genre || '').trim();
+  if (
+    genreStr &&
+    UNWANTED_GENRE_REGEX.test(genreStr) &&
+    !UNWANTED_GENRE_REGEX.test(`${title} ${artist}`) &&
+    !(cand.user?.verified && candUserNorm === primaryArtistNorm)
+  ) {
+    return -1000;
+  }
+
+  // Require high title token coverage (whole-word matching)
+  const candTitleWords = new Set(candTitleNorm.split(' ').filter(Boolean));
+  const titleWords = targetTitleNorm.split(' ').filter((w) => w.length >= 2);
+  const effectiveTitleWords =
+    titleWords.length > 0 ? titleWords : targetTitleNorm.split(' ').filter(Boolean);
+  if (effectiveTitleWords.length === 0) return -1000;
+
+  const matchedTitleCount = effectiveTitleWords.filter((w) => candTitleWords.has(w)).length;
+  const titleCoverage = matchedTitleCount / effectiveTitleWords.length;
+  if (effectiveTitleWords.length <= 2 ? titleCoverage < 1 : titleCoverage < 0.8) {
+    return -1000;
+  }
+
+  // Require authentic artist match in title, uploader username, or publisher_metadata (including compact Dewa19/Dewa 19)
+  const primaryArtistTokens = primaryArtistNorm.split(' ').filter((w) => w.length >= 2);
+  const effectiveArtistTokens =
+    primaryArtistTokens.length > 0
+      ? primaryArtistTokens
+      : primaryArtistNorm.split(' ').filter(Boolean);
+  const compactPrimaryArtist = primaryArtistNorm.replace(/\s+/g, '');
+
+  const candMetaWords = new Set(
+    `${candTitleNorm} ${candUserNorm} ${candPubArtistNorm}`.split(' ').filter(Boolean),
+  );
+  const candTitleCompact = candTitleNorm.replace(/\s+/g, '');
+  const candMetaCompact = `${candTitleNorm} ${candUserNorm} ${candPubArtistNorm}`.replace(/\s+/g, '');
+
+  const artistMatchedInTitle =
+    Boolean(primaryArtistNorm) &&
+    (candTitleNorm.includes(primaryArtistNorm) ||
+      (compactPrimaryArtist.length >= 4 && candTitleCompact.includes(compactPrimaryArtist)) ||
+      (effectiveArtistTokens.length > 0 &&
+        effectiveArtistTokens.every((tok) => candTitleWords.has(tok))));
+  const artistMatchedInUserOrPub =
+    Boolean(primaryArtistNorm) &&
+    (candUserNorm === primaryArtistNorm ||
+      candPubArtistNorm === primaryArtistNorm ||
+      (compactPrimaryArtist.length >= 4 && candMetaCompact.includes(compactPrimaryArtist)) ||
+      (effectiveArtistTokens.length > 0 &&
+        effectiveArtistTokens.every((tok) => candMetaWords.has(tok))));
+
+  if (!artistMatchedInTitle && !artistMatchedInUserOrPub) {
+    return -1000;
+  }
+
+  // Detect hidden cover attributions like "Lantas Juicy Luicy - Billy Joe Ava"
+  const knownWords = new Set<string>([
+    ...targetTitleNorm.split(' ').filter(Boolean),
+    ...targetArtistList.flatMap((a) => a.split(' ').filter(Boolean)),
+  ]);
+  let extraUnknownWords = 0;
+  for (const w of candTitleWords) {
+    if (w.length <= 1) continue;
+    if (!knownWords.has(w) && !SAFE_CATALOG_EXTRA_TOKENS.has(w)) {
+      extraUnknownWords++;
+    }
+  }
+  if (extraUnknownWords >= 3) {
+    return -1000;
+  }
+
+  let score = 0;
+  if (cand.policy === 'ALLOW' || cand.policy === 'MONETIZE') score += 45;
+  score += Math.round(titleCoverage * 55);
+  if (
+    candTitleNorm === targetTitleNorm ||
+    candTitleNorm === `${primaryArtistNorm} ${targetTitleNorm}` ||
+    candTitleNorm === `${targetTitleNorm} ${primaryArtistNorm}`
+  ) {
+    score += 35;
+  }
+  if (artistMatchedInTitle) score += 30;
+  if (candPubArtistNorm === primaryArtistNorm || (cand.user?.verified && candUserNorm.includes(primaryArtistNorm))) {
+    score += 120;
+  }
+
+  const plays = cand.playback_count ?? 0;
+  if (plays >= 100_000) score += 30;
+  else if (plays >= 15_000) score += 20;
+  else if (plays >= 3_000) score += 10;
+
+  if (expectedDur > 45) {
+    const diff = Math.abs(durSec - expectedDur);
+    if (diff <= 4) score += 75;
+    else if (diff <= 10) score += 55;
+    else if (diff <= 18) score += 30;
+  } else if (durSec >= 120 && durSec <= 420) {
+    score += 35;
+  }
+
+  score -= extraUnknownWords * 25;
+
   const hasFullTranscoding = transcodings.some((tr) => !tr.snipped && isPlayableScTranscoding(tr));
-  if (hasFullTranscoding) score += 15;
+  if (hasFullTranscoding) score += 20;
 
   return score;
 }
@@ -882,88 +1142,755 @@ async function resolveScTranscoding(track: SoundCloudTrack): Promise<StreamResol
   return null;
 }
 
+function findMatchingCatalogTrack(
+  pool: Track[],
+  title: string,
+  artist: string,
+): Track | undefined {
+  const targetTitleNorm = normalizeText(title);
+  const targetArtistNorm = normalizeText(artist.split(/,|&|feat\.|ft\./i)[0] || artist);
+  const titleWords = targetTitleNorm.split(' ').filter((w) => w.length >= 2);
+
+  const valid = pool.filter((t) => {
+    if (!t.title || !t.artist) return false;
+    if (hasUnwantedVersionMarker(t.title, t.artist, '', title, artist)) return false;
+    const tTitleNorm = normalizeText(t.title);
+    const tTitleWords = tTitleNorm.split(' ').filter(Boolean);
+    const titleOk =
+      tTitleNorm === targetTitleNorm ||
+      (titleWords.length > 0 && titleWords.every((w) => tTitleWords.includes(w)));
+    const artists = splitArtistNames(t.artist);
+    const artistOk =
+      artists.includes(targetArtistNorm) ||
+      normalizeText(t.artist).includes(targetArtistNorm);
+    return titleOk && artistOk;
+  });
+
+  return (
+    valid.find((t) => normalizeText(t.title) === targetTitleNorm && t.previewUrl) ||
+    valid.find((t) => Boolean(t.previewUrl)) ||
+    valid[0]
+  );
+}
+
+const NON_ORIGINAL_AV_REGEX =
+  /\b(reaction|tutorial|chord|chords|trailer|interview|news|berita|pemerintah|review|lesson|how to play|dance challenge|fancam|choreo|choreography)\b/i;
+
+async function resolveDailymotionAudioStream(
+  title: string,
+  artist: string,
+  expectedDur: number,
+): Promise<StreamResolution | null> {
+  try {
+    const cleanArtist = artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || artist;
+    const queries = [
+      `${cleanArtist} ${title} official audio`,
+      `${cleanArtist} ${title} lyrics`,
+    ];
+
+    const settled = await Promise.allSettled(
+      queries.map((q) =>
+        fetchJson<{ list?: DailymotionListItem[] }>(
+          `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration,owner.username&limit=8`,
+          undefined,
+          5000,
+        ),
+      ),
+    );
+
+    const seenIds = new Set<string>();
+    const pool: DailymotionListItem[] = [];
+    for (const r of settled) {
+      if (r.status !== 'fulfilled') continue;
+      for (const item of r.value.list ?? []) {
+        if (item.id && !seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          pool.push(item);
+        }
+      }
+    }
+    if (pool.length === 0) return null;
+
+    const targetTitleNorm = normalizeText(title);
+    const targetTitleTokens = targetTitleNorm.split(' ').filter((w) => w.length >= 2);
+    const effectiveTitleTokens =
+      targetTitleTokens.length > 0 ? targetTitleTokens : targetTitleNorm.split(' ').filter(Boolean);
+    const targetArtistNorm = normalizeText(cleanArtist);
+    const targetArtistTokens = targetArtistNorm.split(' ').filter((w) => w.length >= 2);
+    const compactArtist = targetArtistNorm.replace(/\s+/g, '');
+
+    const scored = pool
+      .map((item) => {
+        const rawTitle = item.title || '';
+        const owner = item['owner.username'] || '';
+        const durSec = item.duration || 0;
+        if (!rawTitle || durSec < 60 || durSec > 540) return { item, score: -1000 };
+        if (expectedDur > 45) {
+          const maxDiff = Math.min(20, Math.max(12, Math.round(expectedDur * 0.08)));
+          if (Math.abs(durSec - expectedDur) > maxDiff) return { item, score: -1000 };
+        }
+        if (hasUnwantedVersionMarker(rawTitle, owner, '', title, artist)) {
+          return { item, score: -1000 };
+        }
+        if (NON_ORIGINAL_AV_REGEX.test(rawTitle) && !NON_ORIGINAL_AV_REGEX.test(`${title} ${artist}`)) {
+          return { item, score: -1000 };
+        }
+
+        const candNorm = normalizeText(rawTitle);
+        const candWords = new Set(candNorm.split(' ').filter(Boolean));
+        const candCompact = candNorm.replace(/\s+/g, '');
+        const titleMatchedCount = effectiveTitleTokens.filter((w) => candWords.has(w)).length;
+        const titleCov =
+          effectiveTitleTokens.length > 0 ? titleMatchedCount / effectiveTitleTokens.length : 0;
+        if (effectiveTitleTokens.length <= 2 ? titleCov < 1 : titleCov < 0.8) {
+          return { item, score: -1000 };
+        }
+
+        const artistMatched =
+          Boolean(targetArtistNorm) &&
+          (candNorm.includes(targetArtistNorm) ||
+            (compactArtist.length >= 4 && candCompact.includes(compactArtist)) ||
+            (targetArtistTokens.length > 0 && targetArtistTokens.every((w) => candWords.has(w))));
+        if (!artistMatched) return { item, score: -1000 };
+
+        let score = 50;
+        const lower = rawTitle.toLowerCase();
+        if (lower.includes('official audio')) score += 80;
+        else if (/\baudio\b/.test(lower)) score += 40;
+        if (lower.includes('lyrics') || lower.includes('lyric') || lower.includes('lirik')) score += 35;
+        if (lower.includes('official')) score += 20;
+        if (expectedDur > 45) {
+          const diff = Math.abs(durSec - expectedDur);
+          if (diff <= 4) score += 60;
+          else if (diff <= 10) score += 35;
+        }
+        return { item, score };
+      })
+      .filter((x) => x.score >= 70)
+      .sort((a, b) => b.score - a.score);
+
+    for (const { item } of scored.slice(0, 3)) {
+      try {
+        const meta = await fetchJson<DailymotionMetadata>(
+          `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(item.id)}`,
+          undefined,
+          5000,
+        );
+        const autoStream = meta.qualities?.auto?.find(
+          (q) => q.url && isValidExternalMediaUrl(q.url),
+        )?.url;
+        if (!autoStream) continue;
+
+        const dur = meta.duration || item.duration || expectedDur;
+        if (HAS_FFMPEG) {
+          return {
+            streamUrl: `/api/hls-audio?url=${encodeURIComponent(autoStream)}`,
+            mode: 'audio',
+            source: 'dailymotion',
+            fullLength: true,
+            durationSec: dur,
+          };
+        }
+        return {
+          streamUrl: `/api/hls-proxy?url=${encodeURIComponent(autoStream)}`,
+          mode: 'hls',
+          source: 'dailymotion',
+          fullLength: true,
+          durationSec: dur,
+        };
+      } catch {
+        // Try next candidate
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function parseClockDuration(raw: string | number | undefined): number {
+  if (typeof raw === 'number') return raw;
+  if (!raw) return 0;
+  const parts = String(raw)
+    .split(':')
+    .map((p) => Number(p.trim()))
+    .filter((n) => Number.isFinite(n));
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return Number(raw) || 0;
+}
+
+const BILIBILI_NON_ORIGINAL_REGEX =
+  /翻唱|伴奏|纯音乐|卡拉OK|教学|编舞|直拍|吉他|钢琴|架子鼓|交响|现场|合集|串烧|动态鼓谱|五线谱|钢琴版|中文版|翻跳|鬼畜|改词|填词|恶搞|洗脑|反应|\b(cover|remix|karaoke|ktv|instrumental|piano|guitar|drum|midi|orchestra|live|fancam|dance|choreo|tutorial|reaction)\b/i;
+
+function decodeBasicHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&#x27;|&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+async function getBilibiliCookieHeader(): Promise<string> {
+  return withCache('bili:spi_cookie', 6 * 60 * 60 * 1000, async () => {
+    try {
+      const spi = await fetchJson<{ data?: { b_3?: string; b_4?: string } }>(
+        'https://api.bilibili.com/x/frontend/finger/spi',
+        { headers: { Referer: 'https://www.bilibili.com/', 'User-Agent': USER_AGENT } },
+        4000,
+      );
+      const b3 = spi.data?.b_3;
+      const b4 = spi.data?.b_4;
+      if (b3 && b4) return `buvid3=${b3}; buvid4=${b4}`;
+      if (b3) return `buvid3=${b3}`;
+    } catch {
+      // Proceed without SPI cookie if endpoint unreachable
+    }
+    return '';
+  });
+}
+
+const TRAD_TO_SIMP_MAP: Record<string, string> = {
+  倫: '伦', 愛: '爱', 沒: '没', 聽: '听', 媽: '妈', 話: '话', 這: '这', 說: '说',
+  對: '对', 氣: '气', 後: '后', 來: '来', 開: '开', 為: '为', 與: '与', 時: '时',
+  國: '国', 夢: '梦', 華: '华', 風: '风', 雲: '云', 電: '电', 飛: '飞', 頭: '头',
+  錯: '错', 離: '离', 誰: '谁', 點: '点', 紅: '红', 藍: '蓝', 葉: '叶', 淚: '泪',
+  無: '无', 經: '经', 過: '过', 見: '见', 親: '亲', 難: '难', 樂: '乐', 動: '动',
+  邊: '边', 還: '还', 進: '进', 遠: '远', 聲: '声', 問: '问', 間: '间', 門: '门',
+  長: '长', 記: '记', 許: '许', 認: '认', 該: '该', 讓: '让',
+  變: '变', 給: '给', 結: '结', 線: '线', 終: '终', 實: '实', 寫: '写', 總: '总',
+  會: '会', 將: '将', 從: '从', 應: '应', 願: '愿', 歡: '欢', 傷: '伤', 單: '单',
+  獨: '独', 別: '别', 髮: '发', 發: '发', 詩: '诗', 畫: '画', 簡: '简', 龍: '龙',
+  捲: '卷', 嵐: '岚', 雙: '双', 課: '课', 偉: '伟', 鄉: '乡', 魔: '魔', 術: '术',
+  擱: '搁', 淺: '浅', 軌: '轨', 跡: '迹', 斷: '断', 台: '台', 楓: '枫', 珊: '珊',
+  鐵: '铁', 號: '号', 園: '园', 遊: '游', 晴: '晴', 陰: '阴', 陽: '阳', 戀: '恋',
+  愛人: '爱人', 節: '节', 奏: '奏', 歌: '歌', 詞: '词', 曲: '曲', 韻: '韵',
+  專: '专', 輯: '辑', 演: '演', 唱: '唱', 響: '响', 鈴: '铃', 鐘: '钟',
+  歲: '岁', 舊: '旧', 新: '新', 輕: '轻', 重: '重', 靜: '静', 默: '默',
+};
+
+function toSimplifiedVariant(raw: string): string {
+  let out = '';
+  for (const ch of raw.normalize('NFKC')) {
+    out += TRAD_TO_SIMP_MAP[ch] ?? ch;
+  }
+  return out;
+}
+
+async function resolveBilibiliAudioStream(
+  title: string,
+  artist: string,
+  expectedDur: number,
+): Promise<StreamResolution | null> {
+  try {
+    const cleanArtist = artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || artist;
+    const cookieHeader = await getBilibiliCookieHeader();
+    const biliHeaders: Record<string, string> = {
+      Referer: 'https://www.bilibili.com/',
+      'User-Agent': USER_AGENT,
+      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+    };
+
+    const searchKeyword = toSimplifiedVariant(`${cleanArtist} ${title}`);
+    const search = await fetchJson<{
+      code?: number;
+      data?: {
+        result?: Array<{
+          bvid?: string;
+          title?: string;
+          duration?: string;
+          author?: string;
+          play?: number;
+        }>;
+      };
+    }>(
+      `https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=${encodeURIComponent(searchKeyword)}`,
+      { headers: biliHeaders },
+      4500,
+    );
+
+    const results = search.data?.result ?? [];
+    if (results.length === 0) return null;
+
+    const targetTitleNorm = normalizeText(toSimplifiedVariant(title));
+    const targetTitleTokens = targetTitleNorm.split(' ').filter((w) => w.length >= 2);
+    const effectiveTitleTokens =
+      targetTitleTokens.length > 0 ? targetTitleTokens : targetTitleNorm.split(' ').filter(Boolean);
+    const targetArtistNorm = normalizeText(toSimplifiedVariant(cleanArtist));
+    const targetArtistTokens = targetArtistNorm.split(' ').filter((w) => w.length >= 2);
+
+    const scored = results
+      .map((item) => {
+        const cleanCandTitle = decodeBasicHtmlEntities(
+          (item.title || '').replace(/<[^>]+>/g, ''),
+        ).trim();
+        const durSec = parseClockDuration(item.duration);
+        if (!item.bvid || !cleanCandTitle || durSec < 60 || durSec > 540) {
+          return { item, durSec, score: -1000 };
+        }
+        if (expectedDur > 45) {
+          const maxDiff = Math.min(20, Math.max(12, Math.round(expectedDur * 0.08)));
+          if (Math.abs(durSec - expectedDur) > maxDiff) {
+            return { item, durSec, score: -1000 };
+          }
+        }
+        if (
+          hasUnwantedVersionMarker(cleanCandTitle, item.author || '', '', title, artist) ||
+          (BILIBILI_NON_ORIGINAL_REGEX.test(cleanCandTitle) &&
+            !BILIBILI_NON_ORIGINAL_REGEX.test(`${title} ${artist}`))
+        ) {
+          return { item, durSec, score: -1000 };
+        }
+
+        const candNorm = normalizeText(toSimplifiedVariant(cleanCandTitle));
+        const candWords = new Set(candNorm.split(' ').filter(Boolean));
+        const titleMatched =
+          effectiveTitleTokens.length > 0 &&
+          effectiveTitleTokens.every((w) => candWords.has(w) || candNorm.includes(w));
+        const artistMatched =
+          Boolean(targetArtistNorm) &&
+          (candNorm.includes(targetArtistNorm) ||
+            (targetArtistTokens.length > 0 &&
+              targetArtistTokens.every((w) => candWords.has(w) || candNorm.includes(w))));
+        if (!titleMatched || !artistMatched) {
+          return { item, durSec, score: -1000 };
+        }
+
+        let score = 60;
+        const lower = cleanCandTitle.toLowerCase();
+        if (lower.includes('hi-res') || cleanCandTitle.includes('无损') || lower.includes('flac')) {
+          score += 65;
+        }
+        if (lower.includes('official') || lower.includes('lyrics') || cleanCandTitle.includes('歌词')) {
+          score += 30;
+        }
+        if (expectedDur > 45) {
+          const diff = Math.abs(durSec - expectedDur);
+          if (diff <= 4) score += 50;
+          else if (diff <= 10) score += 25;
+        }
+        return { item, durSec, score };
+      })
+      .filter((x) => x.score >= 60)
+      .sort((a, b) => b.score - a.score);
+
+    for (const { item, durSec } of scored.slice(0, 2)) {
+      try {
+        const view = await fetchJson<{ data?: { cid?: number } }>(
+          `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(item.bvid!)}`,
+          { headers: biliHeaders },
+          4000,
+        );
+        const cid = view.data?.cid;
+        if (!cid) continue;
+
+        const playUrl = await fetchJson<{
+          data?: {
+            timelength?: number;
+            dash?: {
+              audio?: Array<{
+                baseUrl?: string;
+                base_url?: string;
+                backupUrl?: string[];
+                backup_url?: string[];
+                bandwidth?: number;
+              }>;
+            };
+          };
+        }>(
+          `https://api.bilibili.com/x/player/playurl?bvid=${encodeURIComponent(item.bvid!)}&cid=${cid}&fnval=16`,
+          { headers: biliHeaders },
+          4000,
+        );
+
+        const audioTracks = (playUrl.data?.dash?.audio ?? [])
+          .slice()
+          .sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0));
+        const candidateUrls = audioTracks.flatMap((tr) => [
+          tr.baseUrl,
+          tr.base_url,
+          ...(tr.backupUrl ?? []),
+          ...(tr.backup_url ?? []),
+        ]);
+        const audioUrl = candidateUrls.find((u): u is string => Boolean(u && isValidExternalMediaUrl(u)));
+        if (!audioUrl) continue;
+
+        return {
+          streamUrl: `/api/audio-proxy?url=${encodeURIComponent(audioUrl)}`,
+          mode: 'audio',
+          source: 'bilibili',
+          fullLength: true,
+          durationSec: playUrl.data?.timelength
+            ? Math.round(playUrl.data.timelength / 1000)
+            : durSec || expectedDur,
+        };
+      } catch {
+        // Try next Bilibili candidate
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function searchYouTubeMusicCandidates(
+  query: string,
+  params?: string,
+): Promise<Array<{ videoId: string; title: string; artist: string; durationSec: number }>> {
+  const res = await fetchJson<unknown>(
+    'https://music.youtube.com/youtubei/v1/search?prettyPrint=false',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://music.youtube.com',
+        Referer: 'https://music.youtube.com/',
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'WEB_REMIX',
+            clientVersion: '1.20241101.01.00',
+            hl: 'en',
+            gl: 'ID',
+          },
+        },
+        query,
+        ...(params ? { params } : {}),
+      }),
+    },
+    4500,
+  );
+
+  const renderers: Record<string, unknown>[] = [];
+  collectYtmRenderers(res, renderers);
+
+  const out: Array<{ videoId: string; title: string; artist: string; durationSec: number }> = [];
+  const seen = new Set<string>();
+  for (const r of renderers) {
+    const navWatch = (
+      r.overlay as {
+        musicItemThumbnailOverlayRenderer?: {
+          content?: {
+            musicPlayButtonRenderer?: {
+              playNavigationEndpoint?: { watchEndpoint?: { videoId?: string } };
+            };
+          };
+        };
+      }
+    )?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint
+      ?.watchEndpoint?.videoId;
+    const videoId =
+      (r.playlistItemData as { videoId?: string } | undefined)?.videoId || navWatch;
+    if (!videoId || seen.has(videoId)) continue;
+
+    const flexCols =
+      (r.flexColumns as Array<{ musicResponsiveListItemFlexColumnRenderer?: { text?: unknown } }>) ??
+      [];
+    const itemTitle = extractTextRuns(flexCols[0]?.musicResponsiveListItemFlexColumnRenderer?.text);
+    const metaText = extractTextRuns(flexCols[1]?.musicResponsiveListItemFlexColumnRenderer?.text);
+    if (!itemTitle) continue;
+
+    const durMatch = metaText.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
+    const durationSec = durMatch ? parseDurationLabel(durMatch[1]) : 0;
+    const artistPart = metaText
+      .replace(/^(Song|Video|Single|EP)\s*•\s*/i, '')
+      .split('•')[0]
+      ?.trim() || '';
+
+    seen.add(videoId);
+    out.push({ videoId, title: itemTitle, artist: artistPart, durationSec });
+  }
+  return out;
+}
+
+async function resolveYouTubeMusicStream(
+  title: string,
+  artist: string,
+  expectedDur: number,
+): Promise<StreamResolution | null> {
+  try {
+    const cleanArtist = artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || artist;
+    const query = `${cleanArtist} ${title}`.trim();
+
+    // Search Songs filter first (official album/studio audio tracks), then fallback unfiltered if empty
+    let rawCandidates = await searchYouTubeMusicCandidates(
+      query,
+      'EgWKAQIIAWoMEAMQBBAJEAoQBRAV',
+    ).catch(() => []);
+    if (rawCandidates.length === 0) {
+      rawCandidates = await searchYouTubeMusicCandidates(`${query} official audio`).catch(() => []);
+    }
+    if (rawCandidates.length === 0) return null;
+
+    const targetTitleNorm = normalizeText(toSimplifiedVariant(title));
+    const targetTitleTokens = targetTitleNorm.split(' ').filter((w) => w.length >= 2);
+    const effectiveTitleTokens =
+      targetTitleTokens.length > 0 ? targetTitleTokens : targetTitleNorm.split(' ').filter(Boolean);
+    const targetArtistNorm = normalizeText(toSimplifiedVariant(cleanArtist));
+    const targetArtistTokens = targetArtistNorm.split(' ').filter((w) => w.length >= 2);
+    const compactArtist = targetArtistNorm.replace(/\s+/g, '');
+
+    const scored = rawCandidates
+      .map((cand, idx) => {
+        if (cand.durationSec > 0 && (cand.durationSec < 45 || cand.durationSec > 660)) {
+          return { cand, score: -1000 };
+        }
+        if (expectedDur > 45 && cand.durationSec > 45) {
+          const maxDiff = Math.min(25, Math.max(15, Math.round(expectedDur * 0.12)));
+          if (Math.abs(cand.durationSec - expectedDur) > maxDiff) {
+            return { cand, score: -1000 };
+          }
+        }
+        if (hasUnwantedVersionMarker(cand.title, cand.artist, '', title, artist)) {
+          return { cand, score: -1000 };
+        }
+
+        const candTitleNorm = normalizeText(toSimplifiedVariant(cand.title));
+        const candArtistNorm = normalizeText(toSimplifiedVariant(cand.artist));
+        const candTitleWords = new Set(candTitleNorm.split(' ').filter(Boolean));
+        const candMetaWords = new Set(`${candTitleNorm} ${candArtistNorm}`.split(' ').filter(Boolean));
+        const candMetaCompact = `${candTitleNorm}${candArtistNorm}`.replace(/\s+/g, '');
+
+        const titleMatchedCount = effectiveTitleTokens.filter(
+          (w) => candTitleWords.has(w) || candTitleNorm.includes(w),
+        ).length;
+        const titleCov =
+          effectiveTitleTokens.length > 0 ? titleMatchedCount / effectiveTitleTokens.length : 0;
+        if (effectiveTitleTokens.length <= 2 ? titleCov < 1 : titleCov < 0.75) {
+          return { cand, score: -1000 };
+        }
+
+        const artistMatched =
+          Boolean(targetArtistNorm) &&
+          (candArtistNorm.includes(targetArtistNorm) ||
+            candTitleNorm.includes(targetArtistNorm) ||
+            (compactArtist.length >= 3 && candMetaCompact.includes(compactArtist)) ||
+            (targetArtistTokens.length > 0 &&
+              targetArtistTokens.every((w) => candMetaWords.has(w) || candArtistNorm.includes(w))));
+
+        if (!artistMatched && idx > 0) {
+          return { cand, score: -1000 };
+        }
+
+        let score = artistMatched ? 90 : 50;
+        if (candTitleNorm === targetTitleNorm) score += 45;
+        if (idx === 0) score += 25;
+        if (expectedDur > 45 && cand.durationSec > 45) {
+          const diff = Math.abs(cand.durationSec - expectedDur);
+          if (diff <= 4) score += 50;
+          else if (diff <= 12) score += 25;
+        }
+        return { cand, score };
+      })
+      .filter((x) => x.score >= 70)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+
+    if (scored.length === 0) return null;
+
+    // Verify embeddability via lightweight oEmbed check in parallel
+    const oembedChecks = await Promise.allSettled(
+      scored.map(async ({ cand }) => {
+        const res = await fetch(
+          `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${cand.videoId}`)}&format=json`,
+          { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(3000) },
+        );
+        return res.ok ? cand : null;
+      }),
+    );
+
+    const verified = oembedChecks
+      .filter((r): r is PromiseFulfilledResult<{ videoId: string; title: string; artist: string; durationSec: number } | null> => r.status === 'fulfilled')
+      .map((r) => r.value)
+      .filter((v): v is { videoId: string; title: string; artist: string; durationSec: number } => Boolean(v));
+
+    const ordered = verified.length > 0 ? verified : scored.map((s) => s.cand);
+    const best = ordered[0];
+    if (!best?.videoId) return null;
+
+    return {
+      streamUrl: `https://www.youtube.com/watch?v=${best.videoId}`,
+      mode: 'ytmusic',
+      source: 'ytmusic',
+      fullLength: true,
+      durationSec: best.durationSec || expectedDur || 0,
+      videoId: best.videoId,
+      fallbackVideoIds: ordered.slice(1).map((c) => c.videoId),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveAudioStream(params: {
   title: string;
   artist: string;
   durationSec?: number;
   scTrackId?: number;
   previewUrl?: string;
+  preferYtMusic?: boolean;
 }): Promise<StreamResolution> {
-  const { title, artist, durationSec = 0, scTrackId, previewUrl } = params;
-  const cacheKey = `stream:v2:${scTrackId || ''}:${normalizeText(title)}:${normalizeText(artist)}`;
+  const { title, artist, durationSec = 0, scTrackId, previewUrl, preferYtMusic = false } = params;
+  const cacheKey = `stream:v7:${preferYtMusic ? 'ytm:' : ''}${scTrackId || ''}:${normalizeText(title)}:${normalizeText(artist)}:${durationSec}`;
 
   return withCache(cacheKey, 5 * 60 * 1000, async () => {
     const cleanArtist = artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || artist;
-    const cleanTitle = title
-      .replace(/\([^)]*\)/g, ' ')
-      .replace(/\[[^\]]*\]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim() || title;
+    const cleanTitle =
+      title
+        .replace(/\([^)]*\)/g, ' ')
+        .replace(/\[[^\]]*\]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim() || title;
 
-    // 1. Direct SoundCloud track ID if known
+    if (preferYtMusic) {
+      const ytmOnly = await resolveYouTubeMusicStream(cleanTitle, cleanArtist, durationSec);
+      if (ytmOnly) return ytmOnly;
+    }
+
+    // 1. Direct SoundCloud track ID only if caller explicitly provided a SoundCloud catalog item
     if (scTrackId) {
       try {
         const cid = await getSoundCloudClientId(false);
         const scTrack = await fetchJson<SoundCloudTrack>(
           `https://api-v2.soundcloud.com/tracks/${scTrackId}?client_id=${cid}`,
           undefined,
-          4500,
+          4000,
         );
         const res = await resolveScTranscoding(scTrack);
-        if (res) return res;
+        if (res && res.fullLength) return res;
       } catch {
         // Continue to search
       }
     }
 
-    // 2. SoundCloud search & smart scoring (clean non-DRM candidates)
-    try {
-      const queries = [`${cleanArtist} ${title}`];
-      if (cleanTitle.toLowerCase() !== title.toLowerCase()) {
-        queries.push(`${cleanArtist} ${cleanTitle}`);
-      }
+    // 2. When catalog duration is unknown (e.g. Apple RSS / YTMusic artist list), fetch canonical
+    // duration & verified studio preview in parallel with SoundCloud search so loops/mashups are rejected
+    let canonicalDur = durationSec > 40 ? durationSec : 0;
+    let verifiedCatalogPreview =
+      previewUrl && isValidExternalMediaUrl(previewUrl) ? previewUrl : undefined;
 
-      for (const q of queries) {
-        const results = await searchSoundCloudRaw(q, 14);
-        const ranked = results
-          .map((cand) => ({ cand, score: scoreSoundCloudCandidate(cand, title, artist, durationSec) }))
-          .filter((x) => x.score > 15)
-          .sort((a, b) => b.score - a.score);
+    const catalogPromise =
+      canonicalDur === 0 || !verifiedCatalogPreview
+        ? Promise.allSettled([
+            scrapeItunesSearch(`${cleanArtist} ${cleanTitle}`, 'id', 'GLOBAL', 4),
+            scrapeItunesSearch(`${cleanArtist} ${cleanTitle}`, 'us', 'GLOBAL', 4),
+            scrapeDeezerSearch(`${cleanArtist} ${cleanTitle}`, 'GLOBAL', 4),
+            canonicalDur === 0
+              ? fetchJson<LrclibItem>(
+                  `https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanTitle)}&artist_name=${encodeURIComponent(cleanArtist)}`,
+                  undefined,
+                  3000,
+                )
+              : Promise.resolve(null),
+          ]).then(([itunesId, itunesUs, dz, lrclibRes]) => {
+            const pool = [
+              ...(itunesId.status === 'fulfilled' ? itunesId.value : []),
+              ...(itunesUs.status === 'fulfilled' ? itunesUs.value : []),
+              ...(dz.status === 'fulfilled' ? dz.value : []),
+            ];
+            const bestMatch = findMatchingCatalogTrack(pool, title, artist);
+            if (bestMatch) {
+              if (canonicalDur === 0 && bestMatch.durationSec > 40) {
+                canonicalDur = bestMatch.durationSec;
+              }
+              if (!verifiedCatalogPreview && bestMatch.previewUrl && isValidExternalMediaUrl(bestMatch.previewUrl)) {
+                verifiedCatalogPreview = bestMatch.previewUrl;
+              }
+            }
+            if (
+              canonicalDur === 0 &&
+              lrclibRes.status === 'fulfilled' &&
+              lrclibRes.value?.duration &&
+              lrclibRes.value.duration > 40
+            ) {
+              canonicalDur = Math.round(lrclibRes.value.duration);
+            }
+          })
+        : Promise.resolve();
 
-        for (const item of ranked.slice(0, 4)) {
-          const res = await resolveScTranscoding(item.cand);
-          if (res && res.fullLength) {
-            return res;
+    const fetchScBatch = async (queries: string[], limit: number, offset: number) => {
+      const uniqueQueries = Array.from(new Set(queries.map((q) => q.trim()))).filter(Boolean);
+      const batchResults = await Promise.allSettled(
+        uniqueQueries.map((q) => searchSoundCloudRaw(q, limit, offset)),
+      );
+      const merged: SoundCloudTrack[] = [];
+      const seenScIds = new Set<number>();
+      for (const r of batchResults) {
+        if (r.status !== 'fulfilled') continue;
+        for (const item of r.value) {
+          if (item?.id && !seenScIds.has(item.id)) {
+            seenScIds.add(item.id);
+            merged.push(item);
           }
         }
       }
-    } catch {
-      // Fall through to JioSaavn
+      return merged;
+    };
+
+    const scQueryPromise = fetchScBatch(
+      [`${cleanArtist} - ${title}`, `${cleanArtist} ${cleanTitle}`],
+      40,
+      0,
+    ).catch(() => [] as SoundCloudTrack[]);
+
+    const [, scCandidates] = await Promise.all([catalogPromise, scQueryPromise]);
+
+    const rankSoundCloud = (list: SoundCloudTrack[]) =>
+      list
+        .map((cand) => ({
+          cand,
+          score: scoreSoundCloudCandidate(cand, title, artist, canonicalDur),
+        }))
+        .filter((x) => x.score >= 70)
+        .sort((a, b) => b.score - a.score);
+
+    // 3. Score SoundCloud page 1 candidates first for lowest-latency direct MP3/HLS audio
+    const rankedPass1 = rankSoundCloud(scCandidates);
+    for (const item of rankedPass1.slice(0, 3)) {
+      const res = await resolveScTranscoding(item.cand);
+      if (res && res.fullLength) {
+        return res;
+      }
     }
 
-    // 3. JioSaavn full-track fallback
-    const saavnRes = await resolveJioSaavnStream(cleanTitle, cleanArtist, durationSec);
-    if (saavnRes) return saavnRes;
+    // 4. Concurrent multi-source fallback (SC page 2 + JioSaavn + Dailymotion + Bilibili + YouTube Music)
+    // Running concurrently keeps worst-case latency under ~5s even on Vercel serverless functions
+    const [scDeepRes, saavnRes, dmRes, biliRes, ytmRes] = await Promise.allSettled([
+      (async () => {
+        const deepCandidates = await fetchScBatch(
+          [`${cleanArtist} ${cleanTitle}`, `${cleanTitle} ${cleanArtist}`],
+          50,
+          30,
+        );
+        const rankedDeep = rankSoundCloud(deepCandidates);
+        for (const item of rankedDeep.slice(0, 3)) {
+          const res = await resolveScTranscoding(item.cand);
+          if (res && res.fullLength) return res;
+        }
+        return null;
+      })(),
+      resolveJioSaavnStream(cleanTitle, cleanArtist, canonicalDur),
+      resolveDailymotionAudioStream(cleanTitle, cleanArtist, canonicalDur),
+      resolveBilibiliAudioStream(cleanTitle, cleanArtist, canonicalDur),
+      resolveYouTubeMusicStream(cleanTitle, cleanArtist, canonicalDur),
+    ]);
 
-    // 4. Verified preview fallback (provided or fetched from iTunes & Deezer in parallel)
-    let fallbackPreview = previewUrl && isValidExternalMediaUrl(previewUrl) ? previewUrl : undefined;
-    if (!fallbackPreview) {
-      const [itunesId, itunesUs, dz] = await Promise.allSettled([
-        scrapeItunesSearch(`${cleanArtist} ${cleanTitle}`, 'id', 'GLOBAL', 4),
-        scrapeItunesSearch(`${cleanArtist} ${cleanTitle}`, 'us', 'GLOBAL', 4),
-        scrapeDeezerSearch(`${cleanArtist} ${cleanTitle}`, 'GLOBAL', 4),
-      ]);
-      const pool = [
-        ...(itunesId.status === 'fulfilled' ? itunesId.value : []),
-        ...(itunesUs.status === 'fulfilled' ? itunesUs.value : []),
-        ...(dz.status === 'fulfilled' ? dz.value : []),
-      ];
-      fallbackPreview = pool.find((t) => t.previewUrl && isValidExternalMediaUrl(t.previewUrl))?.previewUrl;
+    const pick = (r: PromiseSettledResult<StreamResolution | null>) =>
+      r.status === 'fulfilled' && r.value && r.value.fullLength ? r.value : null;
+
+    const fullWinner =
+      pick(scDeepRes) || pick(saavnRes) || pick(dmRes) || pick(biliRes) || pick(ytmRes);
+    if (fullWinner) {
+      return fullWinner;
     }
 
-    if (fallbackPreview && isValidExternalMediaUrl(fallbackPreview)) {
+    // 5. Verified official studio preview fallback (iTunes / Deezer) ONLY if all 5 full sources failed
+    if (verifiedCatalogPreview && isValidExternalMediaUrl(verifiedCatalogPreview)) {
       return {
-        streamUrl: `/api/audio-proxy?url=${encodeURIComponent(fallbackPreview)}`,
+        streamUrl: `/api/audio-proxy?url=${encodeURIComponent(verifiedCatalogPreview)}`,
         mode: 'audio',
         source: 'preview',
         fullLength: false,
@@ -1371,18 +2298,22 @@ export async function searchCatalog(query: string): Promise<SearchPayload> {
     const albumMap = new Map<string, AlbumSummary>();
 
     for (const t of merged) {
-      const artistName = t.artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || t.artist;
-      const aKey = normalizeText(artistName);
-      if (aKey && !artistMap.has(aKey) && t.artwork) {
-        artistMap.set(aKey, {
-          id: `artist-${encodeURIComponent(artistName)}`,
-          name: artistName,
-          artwork: t.artwork,
-          genre: t.genre,
-          region: t.region,
-        });
+      if (t.source !== 'soundcloud') {
+        const artistName = t.artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || t.artist;
+        const aKey = normalizeText(artistName);
+        if (aKey && !artistMap.has(aKey) && t.artwork) {
+          artistMap.set(aKey, {
+            id: `artist-${encodeURIComponent(artistName)}`,
+            name: artistName,
+            artwork: t.artwork,
+            genre: t.genre,
+            region: t.region,
+          });
+        }
       }
 
+      const artistName = t.artist.split(/,|&|feat\.|ft\./i)[0]?.trim() || t.artist;
+      const aKey = normalizeText(artistName);
       if (t.album && t.album !== 'Single' && t.album !== 'SoundCloud' && t.album !== 'Top Charts') {
         const albKey = `${normalizeText(t.album)}::${aKey}`;
         if (!albumMap.has(albKey) && t.artwork) {
@@ -1408,6 +2339,7 @@ export async function searchCatalog(query: string): Promise<SearchPayload> {
 
 interface YtmArtistProfileData {
   name?: string;
+  avatarArtwork?: string;
   bannerArtwork?: string;
   bio?: string;
   monthlyListenersText?: string;
@@ -1420,8 +2352,19 @@ interface YtmArtistProfileData {
   relatedArtists: ArtistRelatedItem[];
 }
 
+function parseAudienceMetric(text: string): number {
+  const m = text.match(/([\d.]+)\s*([KMB])?/i);
+  if (!m) return 0;
+  const base = Number(m[1]) || 0;
+  const suffix = (m[2] || '').toUpperCase();
+  if (suffix === 'B') return base * 1_000_000_000;
+  if (suffix === 'M') return base * 1_000_000;
+  if (suffix === 'K') return base * 1_000;
+  return base;
+}
+
 async function scrapeYTMusicArtistProfile(artistName: string): Promise<YtmArtistProfileData | null> {
-  return withCache(`ytm_artist_profile:${artistName.toLowerCase()}`, 20 * 60 * 1000, async () => {
+  return withCache(`ytm_artist_profile_v2:${artistName.toLowerCase()}`, 20 * 60 * 1000, async () => {
     const searchRes = await fetchJson<unknown>(
       'https://music.youtube.com/youtubei/v1/search?prettyPrint=false',
       {
@@ -1450,29 +2393,79 @@ async function scrapeYTMusicArtistProfile(artistName: string): Promise<YtmArtist
     const renderers: Record<string, unknown>[] = [];
     collectYtmRenderers(searchRes, renderers);
 
-    let browseId: string | undefined;
     const targetNorm = normalizeText(artistName);
-    for (const r of renderers) {
-      const flexCols = (r.flexColumns as Array<{ musicResponsiveListItemFlexColumnRenderer?: { text?: unknown } }>) ?? [];
+    const targetWords = targetNorm.split(' ').filter(Boolean);
+
+    interface YtmArtistCandidate {
+      browseId: string;
+      name: string;
+      avatarArtwork: string;
+      score: number;
+    }
+
+    const candidates: YtmArtistCandidate[] = [];
+    const targetRawLower = artistName.trim().toLowerCase();
+    for (let idx = 0; idx < renderers.length; idx++) {
+      const r = renderers[idx];
+      const flexCols =
+        (r.flexColumns as Array<{ musicResponsiveListItemFlexColumnRenderer?: { text?: unknown } }>) ??
+        [];
       const candidateName = extractTextRuns(flexCols[0]?.musicResponsiveListItemFlexColumnRenderer?.text);
+      const subtitle = extractTextRuns(flexCols[1]?.musicResponsiveListItemFlexColumnRenderer?.text);
       const navId = (
         r.navigationEndpoint as { browseEndpoint?: { browseId?: string } } | undefined
       )?.browseEndpoint?.browseId;
-      if (navId && navId.startsWith('UC')) {
-        if (!browseId) browseId = navId;
-        if (normalizeText(candidateName) === targetNorm || normalizeText(candidateName).includes(targetNorm)) {
-          browseId = navId;
-          break;
-        }
+
+      if (!navId || !navId.startsWith('UC') || !candidateName) continue;
+      if (/\b(song|video|album|playlist|podcast)\b/i.test(subtitle) && !/\bartist\b/i.test(subtitle)) {
+        continue;
       }
+
+      const candNorm = normalizeText(candidateName);
+      if (!candNorm) continue;
+
+      const candWords = candNorm.split(' ').filter(Boolean);
+      const isExactRaw = candidateName.trim().toLowerCase() === targetRawLower;
+      const isExact = candNorm === targetNorm;
+      const isWholeWordSuperset =
+        targetWords.length > 0 &&
+        targetWords.every((w) => candWords.includes(w)) &&
+        candWords.length <= targetWords.length + 2;
+      const isTargetSuperset =
+        candWords.length > 0 &&
+        candWords.every((w) => targetWords.includes(w)) &&
+        targetWords.length <= candWords.length + 2;
+
+      if (!isExact && !isWholeWordSuperset && !isTargetSuperset) continue;
+
+      let score = isExactRaw ? 12500 : isExact ? 10000 : isWholeWordSuperset ? 2600 : 2200;
+      const audience = parseAudienceMetric(subtitle);
+      if (audience > 0) {
+        score += Math.round(Math.log10(audience + 1) * 350);
+      }
+      if (/monthly audience/i.test(subtitle)) {
+        score += 120;
+      }
+      score += Math.max(0, 160 - idx * 25);
+
+      const thumbs = (
+        r.thumbnail as {
+          musicThumbnailRenderer?: { thumbnail?: { thumbnails?: Array<{ url?: string }> } };
+        }
+      )?.musicThumbnailRenderer?.thumbnail?.thumbnails;
+      const rawAvatar = thumbs?.[thumbs.length - 1]?.url || '';
+      const avatarArtwork = rawAvatar
+        ? rawAvatar.replace(/=w\d+-h\d+[^=]*/, '=w544-h544-p-l90-rj')
+        : '';
+
+      candidates.push({ browseId: navId, name: candidateName, avatarArtwork, score });
     }
 
-    if (!browseId) {
-      const fallbackMatch = JSON.stringify(searchRes).match(/"browseId":"(UC[^"]+)"/);
-      browseId = fallbackMatch?.[1];
-    }
-    if (!browseId) return null;
+    candidates.sort((a, b) => b.score - a.score);
+    const best = candidates[0];
+    if (!best?.browseId) return null;
 
+    const browseId = best.browseId;
     const browseRes = await fetchJson<Record<string, unknown>>(
       'https://music.youtube.com/youtubei/v1/browse?prettyPrint=false',
       {
@@ -1506,7 +2499,7 @@ async function scrapeYTMusicArtistProfile(artistName: string): Promise<YtmArtist
     const header =
       headerWrapper?.musicImmersiveHeaderRenderer || headerWrapper?.musicVisualHeaderRenderer;
 
-    const resolvedName = extractTextRuns(header?.title) || artistName;
+    const resolvedName = extractTextRuns(header?.title) || best.name || artistName;
     const rawMonthly = extractTextRuns(header?.monthlyListenerCount);
     const monthlyListenersText = rawMonthly
       ? rawMonthly.replace(/\s*monthly audience/i, '').trim()
@@ -1680,6 +2673,7 @@ async function scrapeYTMusicArtistProfile(artistName: string): Promise<YtmArtist
 
     return {
       name: resolvedName,
+      avatarArtwork: best.avatarArtwork || undefined,
       bannerArtwork,
       bio,
       monthlyListenersText,
@@ -1694,10 +2688,34 @@ async function scrapeYTMusicArtistProfile(artistName: string): Promise<YtmArtist
   });
 }
 
+function trackMatchesArtist(
+  trackArtist: string,
+  targetArtist: string,
+  resolvedAlias?: string,
+): boolean {
+  const targetNorm = normalizeText(targetArtist);
+  const aliasNorm = resolvedAlias ? normalizeText(resolvedAlias) : '';
+  const collaborators = splitArtistNames(trackArtist);
+  if (collaborators.some((c) => c === targetNorm || (aliasNorm && c === aliasNorm))) {
+    return true;
+  }
+  // Allow classic group name suffix variants like "Dewa" <-> "Dewa 19"
+  const fullTrackArtistNorm = normalizeText(trackArtist);
+  if (targetNorm.length >= 4 && fullTrackArtistNorm === targetNorm) return true;
+  if (aliasNorm.length >= 4 && fullTrackArtistNorm === aliasNorm) return true;
+  return false;
+}
+
 async function scrapeDeezerArtistStats(
   artistName: string,
+  expectedTrackTitles: string[] = [],
 ): Promise<{ nbFan?: number; nbAlbum?: number; picture?: string } | null> {
-  return withCache(`deezer_artist:${artistName.toLowerCase()}`, 20 * 60 * 1000, async () => {
+  const titleKey = expectedTrackTitles
+    .slice(0, 4)
+    .map((t) => normalizeText(t))
+    .filter(Boolean)
+    .join('|');
+  return withCache(`deezer_artist_v2:${artistName.toLowerCase()}:${titleKey}`, 20 * 60 * 1000, async () => {
     const data = await fetchJson<{
       data?: Array<{
         id?: number;
@@ -1707,55 +2725,128 @@ async function scrapeDeezerArtistStats(
         picture_xl?: string;
         picture_big?: string;
       }>;
-    }>(`https://api.deezer.com/search/artist?q=${encodeURIComponent(artistName)}&limit=5`, undefined, 6000);
+    }>(`https://api.deezer.com/search/artist?q=${encodeURIComponent(artistName)}&limit=10`, undefined, 6000);
 
     const targetNorm = normalizeText(artistName);
     const list = data.data ?? [];
-    const exact =
-      list.find((a) => normalizeText(a.name || '') === targetNorm) ||
-      list.find((a) => normalizeText(a.name || '').includes(targetNorm)) ||
-      list[0];
-    if (!exact) return null;
-    return {
-      nbFan: exact.nb_fan,
-      nbAlbum: exact.nb_album,
-      picture: exact.picture_xl || exact.picture_big,
-    };
+    const exactMatches = list
+      .filter((a) => normalizeText(a.name || '') === targetNorm && Boolean(a.id))
+      .sort((a, b) => {
+        const albumDelta = (b.nb_album ? 1 : 0) - (a.nb_album ? 1 : 0);
+        if (albumDelta !== 0) return albumDelta;
+        return (b.nb_fan || 0) - (a.nb_fan || 0);
+      });
+
+    if (exactMatches.length === 0) return null;
+
+    const expectedList = expectedTrackTitles.map((t) => normalizeText(t)).filter(Boolean);
+    const expectedWordsList = expectedList.map((t) => ({
+      full: t,
+      words: t.split(' ').filter((w) => w.length >= 3),
+    }));
+
+    for (const cand of exactMatches.slice(0, 3)) {
+      if (!cand.id) continue;
+      try {
+        const top = await fetchJson<{ data?: Array<{ title?: string }> }>(
+          `https://api.deezer.com/artist/${cand.id}/top?limit=10`,
+          undefined,
+          4500,
+        );
+        const topTitles = (top.data ?? []).map((t) => normalizeText(t.title || '')).filter(Boolean);
+        if (expectedList.length > 0) {
+          const overlaps = topTitles.some((dzTitle) => {
+            if (expectedList.includes(dzTitle)) return true;
+            const dzWords = dzTitle.split(' ').filter((w) => w.length >= 3);
+            return expectedWordsList.some(
+              ({ full, words }) =>
+                (words.length > 0 && words.every((w) => dzTitle.includes(w))) ||
+                (dzWords.length > 0 && dzWords.every((w) => full.includes(w))),
+            );
+          });
+          if (!overlaps) continue;
+        } else if ((cand.nb_album || 0) === 0 || topTitles.length === 0) {
+          continue;
+        }
+
+        return {
+          nbFan: cand.nb_fan,
+          nbAlbum: cand.nb_album,
+          picture: cand.picture_xl || cand.picture_big,
+        };
+      } catch {
+        // Try next homonym candidate
+      }
+    }
+
+    return null;
   });
 }
 
 export async function getArtistDetail(artistName: string): Promise<ArtistDetailPayload> {
   const clean = artistName.trim();
-  return withCache(`artist_v2:${clean.toLowerCase()}`, 15 * 60 * 1000, async () => {
-    const [itunesId, itunesUs, deezer, ytm, ytmProfileRes, dzStatsRes] = await Promise.allSettled([
+  return withCache(`artist_v4:${clean.toLowerCase()}`, 15 * 60 * 1000, async () => {
+    const [itunesId, itunesUs, deezer, ytm, ytmProfileRes] = await Promise.allSettled([
       scrapeItunesSearch(clean, 'id', 'ID', 20),
       scrapeItunesSearch(clean, 'us', 'GLOBAL', 15),
       scrapeDeezerSearch(clean, 'GLOBAL', 15),
       scrapeYTMusicSearch(clean, 'ID', 'GLOBAL'),
       scrapeYTMusicArtistProfile(clean),
-      scrapeDeezerArtistStats(clean),
     ]);
 
     const grab = (r: PromiseSettledResult<Track[]>) => (r.status === 'fulfilled' ? r.value : []);
     const ytmProfile = ytmProfileRes.status === 'fulfilled' ? ytmProfileRes.value : null;
-    const dzStats = dzStatsRes.status === 'fulfilled' ? dzStatsRes.value : null;
-    const targetNorm = normalizeText(clean);
 
-    const all = deduplicateTracks([
+    const allRaw = deduplicateTracks([
       ...(ytmProfile?.topTracks ?? []),
       ...grab(itunesId),
       ...grab(deezer),
       ...grab(itunesUs),
       ...grab(ytm),
     ]);
-    const matching = all.filter(
-      (t) =>
-        normalizeText(t.artist).includes(targetNorm) ||
-        targetNorm.includes(normalizeText(t.artist.split(/,|&/)[0] || '')),
-    );
-    const baseTracks = (matching.length >= 3 ? matching : all).slice(0, 25);
 
-    // Attach scraped real play counts & fill durations from matching catalog entries
+    const targetNorm = normalizeText(clean);
+    const aliasNorm = ytmProfile?.name ? normalizeText(ytmProfile.name) : '';
+    const matching = allRaw.filter((t) =>
+      trackMatchesArtist(t.artist, clean, ytmProfile?.name),
+    );
+    const nonSpamMatching = matching.filter((t) => {
+      const collabs = splitArtistNames(t.artist);
+      const isPrimary = collabs[0] === targetNorm || (aliasNorm && collabs[0] === aliasNorm);
+      return isPrimary || collabs.length <= 3;
+    });
+    const cleanMatching = nonSpamMatching.length >= 3 ? nonSpamMatching : matching;
+    cleanMatching.sort((a, b) => {
+      const aCollabs = splitArtistNames(a.artist);
+      const bCollabs = splitArtistNames(b.artist);
+      const aScore =
+        (a.source === 'ytmusic' && a.playCountText ? 4 : 0) +
+        (aCollabs[0] === targetNorm || (aliasNorm && aCollabs[0] === aliasNorm) ? 2 : 0) +
+        (aCollabs.length <= 2 ? 1 : 0);
+      const bScore =
+        (b.source === 'ytmusic' && b.playCountText ? 4 : 0) +
+        (bCollabs[0] === targetNorm || (aliasNorm && bCollabs[0] === aliasNorm) ? 2 : 0) +
+        (bCollabs.length <= 2 ? 1 : 0);
+      return bScore - aScore;
+    });
+
+    const baseTracks = (
+      cleanMatching.length >= 1
+        ? cleanMatching
+        : (ytmProfile?.topTracks?.length ?? 0) > 0
+          ? ytmProfile!.topTracks
+          : allRaw
+    ).slice(0, 25);
+
+    // Cross-verify Deezer artist profile against confirmed track titles so homonym artists
+    // (e.g. Danish "Noah" vs Indonesian "NOAH", or fake "Peterpan"/"Mayday") never hijack the photo
+    const expectedTrackTitles = baseTracks.slice(0, 12).map((t) => t.title);
+    const dzStats = await scrapeDeezerArtistStats(
+      ytmProfile?.name || clean,
+      expectedTrackTitles,
+    ).catch(() => null);
+
+    // Attach scraped real play counts
     const topTracks = baseTracks.map((t) => {
       if (!t.playCountText && ytmProfile?.playCountByTitle) {
         const matchedPlays = ytmProfile.playCountByTitle.get(normalizeText(t.title));
@@ -1794,8 +2885,18 @@ export async function getArtistDetail(artistName: string): Promise<ArtistDetailP
 
     return {
       name: ytmProfile?.name || clean,
-      artwork: dzStats?.picture || topTracks[0]?.artwork || '',
-      bannerArtwork: ytmProfile?.bannerArtwork || dzStats?.picture || topTracks[0]?.artwork || '',
+      artwork:
+        dzStats?.picture ||
+        ytmProfile?.avatarArtwork ||
+        ytmProfile?.bannerArtwork ||
+        topTracks[0]?.artwork ||
+        '',
+      bannerArtwork:
+        ytmProfile?.bannerArtwork ||
+        dzStats?.picture ||
+        ytmProfile?.avatarArtwork ||
+        topTracks[0]?.artwork ||
+        '',
       genre: topTracks[0]?.genre || 'Music',
       region: inferRegion(clean, topTracks[0]?.genre || '', 'GLOBAL'),
       verified: Boolean(ytmProfile?.monthlyListenersText || (dzStats?.nbFan && dzStats.nbFan > 100)),

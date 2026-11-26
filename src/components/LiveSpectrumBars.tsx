@@ -12,7 +12,7 @@ export function LiveSpectrumBars({
   active: activeOverride,
   className = '',
 }: LiveSpectrumBarsProps) {
-  const { isPlaying, mediaMode, nowPlayingOpen, getSpectrumBins } = usePlayer();
+  const { isPlaying, mediaMode, nowPlayingOpen, getSpectrumBins, streamInfo } = usePlayer();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hasSignal, setHasSignal] = useState(false);
 
@@ -22,6 +22,7 @@ export function LiveSpectrumBars({
   const shouldRender =
     !isLitePerf &&
     mediaMode === 'audio' &&
+    streamInfo?.mode !== 'ytmusic' &&
     (activeOverride !== undefined ? activeOverride : variant === 'stage' || nowPlayingOpen);
 
   useEffect(() => {
